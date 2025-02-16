@@ -1,0 +1,10 @@
+fastapi>=0.68.0
+uvicorn>=0.15.0
+python-multipart
+unstructured[pdf]
+pdf2image
+pillow
+chromadb
+openai
+python-dotenv
+uuid
