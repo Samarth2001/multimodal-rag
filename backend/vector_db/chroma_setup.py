@@ -1,37 +1,19 @@
-from langchain.vectorstores import Chroma
-from langchain.retrievers.multi_vector import MultiVectorRetriever
-from langchain.storage import InMemoryStore
-from langchain_openai import OpenAIEmbeddings
+import chromadb
+from chromadb.utils import embedding_functions
+from config import Config
+from chromadb.utils import embedding_functions
 
 
-class VectorStore:
+class ChromaDB:
     def __init__(self):
-        self.vectorstore = Chroma(
-            collection_name="multimodal_rag", embedding_function=OpenAIEmbeddings()
-        )
-        self.store = InMemoryStore()
-
-        self.retriever = MultiVectorRetriever(
-            vectorstore=self.vectorstore, docstore=self.store, id_key="doc_id"
+        self.client = chromadb.PersistentClient(path=Config.CHROMA_PATH)
+        self.embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=Config.DEEPSEEK_API_KEY,
+            model_name=Config.EMBEDDING_MODEL,
+            api_base=Config.DEEPSEEK_API_BASE,
         )
 
-    def store_documents(self, texts: List[str], tables: List[str], images: List[str]):
-        # Store text summaries
-        text_ids = [str(uuid.uuid4()) for _ in texts]
-        self.retriever.vectorstore.add_documents(
-            [
-                Document(page_content=t, metadata={"doc_id": id})
-                for t, id in zip(texts, text_ids)
-            ]
+    def get_collection(self, collection_name: str):
+        return self.client.get_or_create_collection(
+            name=collection_name, embedding_function=self.embedding_fn
         )
-        self.retriever.docstore.mset(list(zip(text_ids, texts)))
-
-        # Store image summaries
-        image_ids = [str(uuid.uuid4()) for _ in images]
-        self.retriever.vectorstore.add_documents(
-            [
-                Document(page_content=i, metadata={"doc_id": id})
-                for i, id in zip(images, image_ids)
-            ]
-        )
-        self.retriever.docstore.mset(list(zip(image_ids, images)))

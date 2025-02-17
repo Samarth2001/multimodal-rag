@@ -10,7 +10,7 @@ export default function FileUpload() {
     const formData = new FormData();
     formData.append("file", file);
   
-    const response = await fetch("/api/upload", {
+    const response = await fetch("http://localhost:8000/api/upload", { // Update URL
       method: "POST",
       body: formData,
     });

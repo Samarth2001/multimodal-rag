@@ -2,6 +2,8 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  
+  // Webpack config
   webpack: (config) => {
     config.resolve.fallback = { 
       fs: false, 
@@ -11,8 +13,27 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
+
+  // Turbopack config
+  experimental: {
+    turbo: {
+      resolveAlias: {
+        
+      }
+    }
+  },
+
   env: {
     BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL,
+  },
+
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:8000/:path*',
+      },
+    ]
   }
 }
 

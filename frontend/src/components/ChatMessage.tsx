@@ -1,6 +1,7 @@
 'use client';
 import { Message } from '../context/ChatContext';
-import { ChevronRightIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { DocumentTextIcon } from '@heroicons/react/24/outline';
 import Image from 'next/image';
 
 export default function ChatMessage({ message }: { message: Message }) {
@@ -15,7 +16,6 @@ export default function ChatMessage({ message }: { message: Message }) {
           className="doc-image"
           alt={`Document visual ${i+1}`}
         />
-      ))}
       ))}
     </div>
   )
