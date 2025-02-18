@@ -5,6 +5,9 @@ from processing.pdf_processor import PDFProcessor
 from vector_db.chroma_setup import ChromaDB
 import uuid
 from fastapi.middleware.cors import CORSMiddleware  # Add this import
+import nltk
+nltk.download('punkt_tab')
+nltk.download('averaged_perceptron_tagger_eng')
 
 import os
 from config import Config

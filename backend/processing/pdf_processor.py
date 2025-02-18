@@ -1,5 +1,6 @@
 from unstructured.partition.pdf import partition_pdf
 from typing import List
+from config import Config
 import os
 
 class PDFProcessor:

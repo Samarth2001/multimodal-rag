@@ -90,7 +90,7 @@ export default function Home() {
       )}
 
       {answer && (
-        <div className="bg-gray-100 p-4 rounded">
+        <div className="bg-gray-800 p-4 rounded">
           <p>{answer}</p>
         </div>
       )}
