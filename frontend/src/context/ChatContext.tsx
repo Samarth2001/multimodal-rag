@@ -1,66 +1,28 @@
 'use client';
-import { createContext, ReactNode, useContext, useState } from 'react';
 
-export interface Source {
-  page_number: number;
-  type: string;
-}
-
-export interface Message {
-  content: string;
-  isUser: boolean;
-  sources?: Source[];
-  images?: string[];
-}
+import { createContext, useState, useContext, ReactNode } from 'react';
 
 interface ChatContextType {
   sessionId: string | null;
-  messages: Message[];
-  addMessage: (message: Message) => void;
-  setSessionId: (id: string) => void;
-  isLoading: boolean;
-  setIsLoading: (state: boolean) => void;
+  setSessionId: (id: string | null) => void;
 }
 
-// Initialize context with default values
-const ChatContext = createContext<ChatContextType>({
-  sessionId: null,
-  messages: [], // Initialize with empty array
-  addMessage: () => {},
-  setSessionId: () => {},
-  isLoading: false,
-  setIsLoading: () => {}
-});
+const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]); // Initialize with empty array
-  const [isLoading, setIsLoading] = useState(false);
-
-  const addMessage = (message: Message) => {
-    const messageWithSources: Message = {
-      ...message,
-      sources: message.sources || []
-    };
-    setMessages((prev) => [...prev, messageWithSources]);
-  };
 
   return (
-    <ChatContext.Provider
-      value={{
-        sessionId,
-        messages,
-        addMessage,
-        setSessionId,
-        isLoading,
-        setIsLoading,
-      }}
-    >
+    <ChatContext.Provider value={{ sessionId, setSessionId }}>
       {children}
     </ChatContext.Provider>
   );
 }
 
 export function useChat() {
-  return useContext(ChatContext);
+  const context = useContext(ChatContext);
+  if (context === undefined) {
+    throw new Error('useChat must be used within a ChatProvider');
+  }
+  return context;
 }
