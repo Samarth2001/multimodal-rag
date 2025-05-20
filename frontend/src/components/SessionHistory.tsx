@@ -1,7 +1,20 @@
 'use client';
 
-import { useState } from 'react';
 import { useChat } from '@/context/ChatContext';
+import { Button } from "@/components/ui/button";
+import { Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useToast } from '@/hooks/use-toast';
 
 export default function SessionHistory() {
   const { 
@@ -9,12 +22,11 @@ export default function SessionHistory() {
     loadSession, 
     deleteSession, 
     sessionId: currentSessionId,
-    saveSession
+    saveSession,
   } = useChat();
   
-  const [showConfirmDelete, setShowConfirmDelete] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  // Format the date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('en-US', {
@@ -25,100 +37,140 @@ export default function SessionHistory() {
     }).format(date);
   };
 
-  const handleDelete = (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
-    setShowConfirmDelete(sessionId);
-  };
-
-  const confirmDelete = (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
-    deleteSession(sessionId);
-    setShowConfirmDelete(null);
-  };
-
-  const cancelDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setShowConfirmDelete(null);
+  const confirmDelete = (sessionIdToDelete: string) => {
+    deleteSession(sessionIdToDelete);
+    toast({
+      title: "Session Deleted",
+      description: "The chat session has been removed.",
+    });
   };
 
   const handleSaveCurrent = () => {
-    saveSession();
+    if (!currentSessionId) {
+      toast({
+        title: "No Active Session",
+        description: "Cannot save. Start a new chat or load a document.",
+        variant: "destructive"
+      });
+      return;
+    }
+    saveSession(); 
+    toast({
+      title: "Session Saved",
+      description: "The current chat progress has been saved.",
+    });
   };
+  
+  const handleLoadSession = (sessionIdToLoad: string) => {
+    loadSession(sessionIdToLoad);
+    const selectedSession = sessions.find(s => s.id === sessionIdToLoad);
+    toast({
+        title: "Session Loaded",
+        description: `Switched to session: ${selectedSession?.name || 'Untitled Session'}.`,
+    });
+  }
 
-  if (sessions.length === 0) {
+  const displaySessions = sessions.filter(s => s.id !== currentSessionId || s.messages.length > 0 || s.name);
+
+  if (displaySessions.length === 0 && !currentSessionId) {
     return (
-      <div className="text-center p-4 text-gray-500 dark:text-gray-400">
-        <p>No saved sessions yet</p>
+      <div className="text-center p-4 text-neutral-500 flex-grow flex flex-col justify-center items-center">
+        <p>No saved sessions yet.</p>
+        <p className="text-xs mt-1">Start a chat and save it to see it here.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 flex flex-col h-full pt-1">
       {currentSessionId && (
-        <button
+        <Button
           onClick={handleSaveCurrent}
-          className="w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm transition-colors"
+          variant="outline"
+          className="w-full border-sky-500/50 text-sky-400 hover:bg-sky-500/10 hover:text-sky-300"
         >
-          Save Current Session
-        </button>
+          Save Current Chat
+        </Button>
       )}
       
-      <h3 className="font-medium text-gray-700 dark:text-gray-300 mb-2">
-        Previous Sessions
-      </h3>
+      {displaySessions.length > 0 && (
+        <h3 className="font-medium text-neutral-400 text-xs px-1 pt-2 tracking-wide uppercase">
+          Saved Sessions
+        </h3>
+      )}
       
-      <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
-        {sessions.map((session) => (
-          <div
-            key={session.id}
-            onClick={() => loadSession(session.id)}
-            className={`p-3 rounded-md cursor-pointer transition-colors ${
-              session.id === currentSessionId
-                ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800/50"
-                : "bg-gray-100 dark:bg-gray-800/50 hover:bg-gray-200 dark:hover:bg-gray-700/50 border border-gray-200 dark:border-gray-700/50"
-            }`}
-          >
-            <div className="flex justify-between items-start">
-              <div>
-                <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-1 truncate max-w-[200px]">
-                  {session.name}
-                </h4>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {formatDate(session.lastUpdated)} • {session.messages.length} messages
-                </p>
-              </div>
-              
-              {showConfirmDelete === session.id ? (
-                <div className="flex space-x-1">
-                  <button
-                    onClick={(e) => confirmDelete(e, session.id)}
-                    className="p-1 text-xs bg-red-500 text-white rounded"
-                  >
-                    Yes
-                  </button>
-                  <button
-                    onClick={cancelDelete}
-                    className="p-1 text-xs bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
-                  >
-                    No
-                  </button>
+      {displaySessions.length === 0 && currentSessionId && (
+         <div className="text-center p-4 text-xs text-neutral-500 flex-grow flex flex-col justify-center items-center">
+            <p>No other saved sessions.</p>
+            <p className="mt-1">Your current chat can be saved using the button above.</p>
+         </div>
+      )}
+
+      {displaySessions.length > 0 && (
+        <div className="space-y-1.5 flex-grow overflow-y-auto pr-1">
+          {displaySessions.map((session) => (
+            <div
+              key={session.id}
+              onClick={() => handleLoadSession(session.id)}
+              className={`p-2.5 rounded-md cursor-pointer transition-all duration-150 group relative
+                ${
+                  session.id === currentSessionId
+                    ? "bg-sky-600/30 border border-sky-500/70 ring-1 ring-sky-500 shadow-md"
+                    : "bg-neutral-800/70 border border-neutral-700/80 hover:bg-neutral-750/70 hover:border-neutral-600/80"
+                }`
+              }
+            >
+              <div className="flex justify-between items-center">
+                <div className="overflow-hidden flex-grow">
+                  <h4 className={`font-medium truncate text-sm ${session.id === currentSessionId ? "text-sky-200" : "text-neutral-100 group-hover:text-white"}`}>
+                    {session.name || "Untitled Session"}
+                  </h4>
+                  <p className={`text-xs truncate ${session.id === currentSessionId ? "text-sky-300/80" : "text-neutral-400 group-hover:text-neutral-300"}`}>
+                    {formatDate(session.lastUpdated)} • {session.messages.length} message(s)
+                  </p>
                 </div>
-              ) : (
-                <button
-                  onClick={(e) => handleDelete(e, session.id)}
-                  className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                  aria-label="Delete session"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
+                
+                <AlertDialog>
+                  <AlertDialogTrigger asChild onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`p-1 h-7 w-7 ml-2 flex-shrink-0 rounded-md ${session.id === currentSessionId ? "text-sky-300 hover:text-red-400 hover:bg-red-500/10" : "text-neutral-500 opacity-60 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10"}`}
+                      aria-label="Delete session"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="bg-neutral-900 border-neutral-800 text-neutral-200">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                      <AlertDialogDescription className="text-neutral-400">
+                        This action cannot be undone. This will permanently delete the session:
+                        <br />
+                        <span className="font-semibold text-neutral-300 mt-1 block"> {session.name || "Untitled Session"}</span>.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel 
+                        className="bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-neutral-300 hover:text-neutral-200"
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                      >
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction 
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); confirmDelete(session.id);}}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 } 

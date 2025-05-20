@@ -9,4 +9,4 @@ embedder = embedding_functions.OpenAIEmbeddingFunction(
 )
 
 embeddings = embedder(["Test document chunk"])
-print(embeddings[0][:5])  # Should show vector numbers
+print(embeddings[0][:5])  # Should show vector numbers 

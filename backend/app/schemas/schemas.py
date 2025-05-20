@@ -20,4 +20,4 @@ class UploadRequest(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     session_id: str
-    history: List[Dict[str, str]] = []
+    history: List[Dict[str, str]] = [] 

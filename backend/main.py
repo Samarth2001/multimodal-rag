@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, BackgroundTasks, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from processing.pdf_processor import PDFProcessor
-from vector_db.chroma_setup import ChromaDB
+from app.services.chroma_service import ChromaDB
 import uuid
 from fastapi.middleware.cors import CORSMiddleware
 import nltk
@@ -51,6 +51,13 @@ class UploadResponse(BaseModel):
     session_id: str
     status: str
     filename: str
+
+class TextEmbeddingRequest(BaseModel):
+    text: str = Field(..., min_length=1, description="Text to analyze and visualize")
+
+class TextEmbeddingResponse(BaseModel):
+    embeddings: List[Dict[str, Any]]
+    processing_time: float
 
 # Helper functions for error handling
 async def process_upload(file_bytes: bytes, filename: str) -> str:
@@ -142,7 +149,7 @@ async def chat_endpoint(request: ChatRequest):
         
         # Use DeepSeek API
         try:
-            client = OpenAI(api_key=Config.DEEPSEEK_API_KEY, base_url=Config.DEEPSEEK_API_BASE)
+            client = OpenAI(api_key=Config.OPENAI_API_KEY, base_url=Config.OPENAI_API_BASE)
 
             response = client.chat.completions.create(
                 model=Config.CHAT_MODEL,
@@ -172,6 +179,60 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing chat: {str(e)}"
+        )
+
+@app.post("/visualize-embeddings", response_model=TextEmbeddingResponse, responses={
+    400: {"model": ErrorResponse},
+    500: {"model": ErrorResponse}
+})
+async def visualize_embeddings(request: TextEmbeddingRequest):
+    start_time = time.time()
+    
+    try:
+        # Process the text
+        text = request.text
+        words = set([word.lower() for word in nltk.word_tokenize(text) if word.isalnum()])
+        
+        if not words:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No valid words found in the input text"
+            )
+        
+        # Use existing embedding API to get vectors
+        try:
+            client = OpenAI(api_key=Config.OPENAI_API_KEY, base_url=Config.OPENAI_API_BASE)
+            
+            response = client.embeddings.create(
+                model=Config.EMBEDDING_MODEL,
+                input=list(words)
+            )
+            
+            # Process embeddings for visualization (keep them as high-dim vectors)
+            word_embeddings = []
+            for i, word in enumerate(words):
+                embedding = response.data[i].embedding
+                word_embeddings.append({
+                    "word": word,
+                    "vector": embedding,
+                })
+            
+            processing_time = time.time() - start_time
+            return {
+                "embeddings": word_embeddings,
+                "processing_time": processing_time
+            }
+        except APIError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Embedding API error: {str(e)}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing embeddings: {str(e)}"
         )
 
 @app.get("/health")

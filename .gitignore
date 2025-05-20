@@ -38,12 +38,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+frontend/.next/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+.cursor/rules/
 
 # C extensions
 *.so
@@ -273,3 +276,10 @@ target/
 
 # Rapid test data
 testdata
+
+# Added by AI
+Miniconda3.exe
+uploads/
+vector_store/
+backend/uploads/
+backend/chroma/
