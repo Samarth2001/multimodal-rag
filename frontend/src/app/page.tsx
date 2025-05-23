@@ -155,52 +155,13 @@ export default function Home() {
     };
   }, [sessionId, question, loading, messages, setMessages]); // Added messages and setMessages to dependency array for handleClearChat
 
-  const LeftPanelContent = () => (
-    <div className="space-y-4 p-4 h-full flex flex-col">
-      <Card className="bg-neutral-900 border-neutral-800">
-        <CardHeader>
-          <CardTitle className="text-lg text-neutral-200 flex items-center">
-            <Paperclip className="mr-2 h-5 w-5 text-sky-400" /> Document Upload
-          </CardTitle>
-          <CardDescription className="text-neutral-400 text-xs">
-            Upload a PDF to begin analysis.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <FileUpload onDocumentNameSet={handleDocumentNameChange} />
-          {sessionId && currentSessionName && (
-            <div className="mt-3 p-2.5 bg-green-900/30 border border-green-700/50 rounded-md text-xs text-green-400 flex items-center">
-              <FileText className="mr-2 h-4 w-4" />
-              <span>Active: {currentSessionName}</span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-neutral-900 border-neutral-800 flex-grow flex flex-col">
-        <CardHeader>
-          <CardTitle className="text-lg text-neutral-200 flex items-center">
-            <MessageSquare className="mr-2 h-5 w-5 text-sky-400" /> Chat History
-          </CardTitle>
-           <CardDescription className="text-neutral-400 text-xs">
-            Review previous conversations.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex-grow overflow-hidden p-0">
-           <ScrollArea className="h-[calc(100%-0rem)] p-4"> {/* Adjust height as needed */}
-            <SessionHistory />
-           </ScrollArea>
-        </CardContent>
-      </Card>
-      {/* Removed TechExplainer */}
-    </div>
-  );
+    const LeftPanelContent = () => (    <div className="h-full flex flex-col p-4 space-y-4">      <Card className="bg-neutral-900 border-neutral-800 flex-shrink-0">        <CardHeader>          <CardTitle className="text-lg text-neutral-200 flex items-center">            <Paperclip className="mr-2 h-5 w-5 text-sky-400" /> Document Upload          </CardTitle>          <CardDescription className="text-neutral-400 text-xs">            Upload a PDF to begin analysis.          </CardDescription>        </CardHeader>        <CardContent>          <FileUpload onDocumentNameSet={handleDocumentNameChange} />          {sessionId && currentSessionName && (            <div className="mt-3 p-2.5 bg-green-900/30 border border-green-700/50 rounded-md text-xs text-green-400 flex items-center">              <FileText className="mr-2 h-4 w-4" />              <span>Active: {currentSessionName}</span>            </div>          )}        </CardContent>      </Card>      <Card className="bg-neutral-900 border-neutral-800 flex-1 flex flex-col min-h-0">        <CardHeader className="flex-shrink-0">          <CardTitle className="text-lg text-neutral-200 flex items-center">            <MessageSquare className="mr-2 h-5 w-5 text-sky-400" /> Chat History          </CardTitle>           <CardDescription className="text-neutral-400 text-xs">            Review previous conversations.          </CardDescription>        </CardHeader>        <CardContent className="flex-1 p-0 min-h-0 overflow-hidden">           <ScrollArea className="h-full">            <div className="p-4">              <SessionHistory />            </div>           </ScrollArea>        </CardContent>      </Card>      {/* Removed TechExplainer */}    </div>  );
 
 
   return (
-    <div className="min-h-screen flex flex-col bg-black text-neutral-200">
+    <div className="h-screen flex flex-col bg-black text-neutral-200 overflow-hidden">
       {/* Header */}
-      <header className="bg-neutral-950 border-b border-neutral-800 py-3 sticky top-0 z-30">
+      <header className="bg-neutral-950 border-b border-neutral-800 py-3 flex-shrink-0">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <div className="flex items-center">
              <Button variant="ghost" size="icon" className="md:hidden mr-2 text-neutral-400 hover:text-sky-400" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
@@ -259,16 +220,16 @@ export default function Home() {
         </div>
       )}
 
-      <main className="flex-grow container mx-auto px-4 py-4 md:py-6 flex gap-6 overflow-hidden">
+      <main className="flex-1 container mx-auto px-4 py-4 md:py-6 flex gap-6 overflow-hidden min-h-0">
         {/* Left Sidebar (Desktop) */}
-        <aside className="hidden md:block md:w-1/3 lg:w-1/4 xl:w-1/5 h-[calc(100vh-80px)] sticky top-[60px]"> {/* Adjust top to match header height */}
+        <aside className="hidden md:block md:w-1/3 lg:w-1/4 xl:w-1/5 flex-shrink-0">
            <LeftPanelContent />
         </aside>
 
         {/* Chat Area */}
-        <div className="flex-grow flex flex-col h-[calc(100vh-80px)] md:h-[calc(100vh-90px)]"> {/* Adjust height */}
-          <Card className="flex-grow flex flex-col bg-neutral-950 border-neutral-800 shadow-md">
-            <CardHeader className="pb-3 pt-4 px-4 border-b border-neutral-800">
+        <div className="flex-1 flex flex-col min-w-0">
+          <Card className="flex-1 flex flex-col bg-neutral-950 border-neutral-800 shadow-md min-h-0">
+            <CardHeader className="pb-3 pt-4 px-4 border-b border-neutral-800 flex-shrink-0">
               <div className="flex justify-between items-center">
                 <CardTitle className="text-lg text-neutral-200">
                   {currentSessionName ? `Chat: ${currentSessionName}` : sessionId ? "Chat" : "Upload a document to begin"}
@@ -298,65 +259,71 @@ export default function Home() {
               </div>
             </CardHeader>
 
-            <CardContent className="flex-grow overflow-hidden p-0">
-              <ScrollArea className="h-full p-4 pb-2"> {/* Changed to h-full */}
-                {messages.length === 0 && sessionId ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <MessageSquare className="w-16 h-16 text-neutral-700 mb-3" />
-                    <p className="text-neutral-500 text-sm">
-                      Ask a question about your document to begin the analysis.
-                    </p>
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                     <FileText className="w-16 h-16 text-neutral-700 mb-3" />
-                    <p className="text-neutral-500 text-sm">
-                      Upload a document to analyze its content.
-                    </p>
-                  </div>
-                ) : (
-                  messages.map((msg, index) => (
-                    <ChatMessage
-                      key={index}
-                      role={msg.role}
-                      content={msg.content}
-                      // Add specific styling for ShadCN if ChatMessage is kept custom
-                      // For example, pass theme='dark' or specific Tailwind classes
-                    />
-                  ))
-                )}
-                <div ref={messagesEndRef} />
+            <CardContent className="flex-1 p-0 min-h-0 overflow-hidden">
+              <ScrollArea className="h-full">
+                <div className="p-4">
+                  {messages.length === 0 && sessionId ? (
+                    <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+                      <MessageSquare className="w-16 h-16 text-neutral-700 mb-3" />
+                      <p className="text-neutral-500 text-sm">
+                        Ask a question about your document to begin the analysis.
+                      </p>
+                    </div>
+                  ) : messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+                       <FileText className="w-16 h-16 text-neutral-700 mb-3" />
+                      <p className="text-neutral-500 text-sm">
+                        Upload a document to analyze its content.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {messages.map((msg, index) => (
+                        <ChatMessage
+                          key={index}
+                          role={msg.role}
+                          content={msg.content}
+                          // Add specific styling for ShadCN if ChatMessage is kept custom
+                          // For example, pass theme='dark' or specific Tailwind classes
+                        />
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
+                </div>
               </ScrollArea>
             </CardContent>
 
-            <CardFooter className="p-4 border-t border-neutral-800">
-              <form id="chat-form" onSubmit={handleQuestion} className="flex w-full items-center space-x-2">
-                <Input
-                  id="chat-input"
-                  type="text"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={sessionId ? "Ask a question..." : "Upload a document first..."}
-                  className="flex-grow bg-neutral-900 border-neutral-700 focus:border-sky-500 placeholder:text-neutral-600"
-                  disabled={!sessionId || loading}
-                />
-                <Button type="submit" disabled={!sessionId || loading || !question.trim()} className="bg-sky-600 hover:bg-sky-500 text-white">
-                  {loading ? (
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  <span className="sr-only">Send</span>
-                </Button>
-              </form>
-               {processingTime && messages.length > 0 && (
-                <p className="text-xs text-neutral-600 mt-2 text-center w-full">
-                  Last query: {processingTime.toFixed(2)}s
-                </p>
-              )}
+            <CardFooter className="p-4 border-t border-neutral-800 flex-shrink-0">
+              <div className="w-full space-y-2">
+                <form id="chat-form" onSubmit={handleQuestion} className="flex w-full items-center space-x-2">
+                  <Input
+                    id="chat-input"
+                    type="text"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder={sessionId ? "Ask a question..." : "Upload a document first..."}
+                    className="flex-grow bg-neutral-900 border-neutral-700 focus:border-sky-500 placeholder:text-neutral-600"
+                    disabled={!sessionId || loading}
+                  />
+                  <Button type="submit" disabled={!sessionId || loading || !question.trim()} className="bg-sky-600 hover:bg-sky-500 text-white">
+                    {loading ? (
+                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                    <span className="sr-only">Send</span>
+                  </Button>
+                </form>
+                {processingTime && messages.length > 0 && (
+                  <p className="text-xs text-neutral-600 text-center">
+                    Last query: {processingTime.toFixed(2)}s
+                  </p>
+                )}
+              </div>
             </CardFooter>
           </Card>
         </div>

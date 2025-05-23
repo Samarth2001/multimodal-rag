@@ -1,207 +1,285 @@
 "use client";
-import { useCallback, useState, useRef } from "react";
+import React, { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { useChat } from "../context/ChatContext";
-import { uploadDocument } from "../utils/api";
+import { uploadDocument } from "@/utils/api";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { UploadCloud, FileText, Loader2, AlertTriangle, XCircle, Eye, EyeOff } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, X } from "lucide-react";
 
 interface FileUploadProps {
-  onDocumentNameSet?: (name: string) => void;
+  onDocumentNameSet: (name: string) => void;
 }
 
-export default function FileUpload({ onDocumentNameSet }: FileUploadProps) {
-  const { setSessionId, sessionId } = useChat();
-  const [isUploading, setIsUploading] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [internalError, setInternalError] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
+interface UploadState {
+  isUploading: boolean;
+  progress: number;
+  uploadedFile: string | null;
+  error: string | null;
+  chunkCount?: number;
+  processingTime?: number;
+}
+
+const FileUpload: React.FC<FileUploadProps> = ({ onDocumentNameSet }) => {
+  const { setSessionId } = useChat();
   const { toast } = useToast();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadState, setUploadState] = useState<UploadState>({
+    isUploading: false,
+    progress: 0,
+    uploadedFile: null,
+    error: null,
+  });
 
-  const onDrop = useCallback(
-    async (acceptedFiles: File[]) => {
-      const file = acceptedFiles[0];
-      if (!file) return;
+  const simulateProgress = useCallback(() => {
+    const interval = setInterval(() => {
+      setUploadState(prev => {
+        if (prev.progress >= 90) {
+          clearInterval(interval);
+          return prev;
+        }
+        return { ...prev, progress: prev.progress + 10 };
+      });
+    }, 200);
+    return interval;
+  }, []);
 
-      if (file.type !== "application/pdf") {
-        setInternalError("Only PDF files are accepted.");
+  const handleUpload = useCallback(async (file: File) => {
+    setUploadState({
+      isUploading: true,
+      progress: 0,
+      uploadedFile: null,
+      error: null,
+    });
+
+    const progressInterval = simulateProgress();
+
+    try {
+      const result = await uploadDocument(file);
+      
+      clearInterval(progressInterval);
+      setUploadState({
+        isUploading: false,
+        progress: 100,
+        uploadedFile: file.name,
+        error: null,
+        chunkCount: result.chunk_count,
+        processingTime: result.processing_time,
+      });
+
+      setSessionId(result.session_id);
+      onDocumentNameSet(file.name);
+
+      toast({
+        title: "Upload Successful",
+        description: `${file.name} processed into ${result.chunk_count} chunks in ${result.processing_time.toFixed(2)}s`,
+      });
+
+    } catch (error) {
+      clearInterval(progressInterval);
+      const errorMessage = error instanceof Error ? error.message : "Upload failed";
+      
+      setUploadState({
+        isUploading: false,
+        progress: 0,
+        uploadedFile: null,
+        error: errorMessage,
+      });
+
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: errorMessage,
+      });
+    }
+  }, [setSessionId, onDocumentNameSet, toast, simulateProgress]);
+
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (file) {
+      // Validate file type
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
         toast({
-          title: "Invalid File Type",
-          description: "Please upload a PDF file.",
           variant: "destructive",
+          title: "Invalid File Type",
+          description: "Only PDF files are supported.",
         });
-        if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
 
-      setInternalError(null);
-      setFileName(file.name);
-      if (onDocumentNameSet) {
-        onDocumentNameSet(file.name);
-      }
-      setIsUploading(true);
-      setShowPreview(false);
-      
-      const fileObjectUrl = URL.createObjectURL(file);
-      setFileUrl(fileObjectUrl);
-      
-      try {
-        const data = await uploadDocument(file);
-        setSessionId(data.session_id);
+      // Validate file size (50MB limit)
+      const maxSize = 50 * 1024 * 1024; // 50MB
+      if (file.size > maxSize) {
         toast({
-          title: "Upload Successful",
-          description: `${file.name} has been uploaded and processed.`,
-        });
-      } catch (error) {
-        console.error("Upload failed:", error);
-        const errorMsg = error instanceof Error ? error.message : "Upload failed due to an unknown error.";
-        toast({
-          title: "Upload Failed",
-          description: errorMsg,
           variant: "destructive",
+          title: "File Too Large",
+          description: `File size (${(file.size / 1024 / 1024).toFixed(1)}MB) exceeds the 50MB limit.`,
         });
-        setFileName(null);
-        setFileUrl(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setInternalError(errorMsg);
-      } finally {
-        setIsUploading(false);
+        return;
       }
-    },
-    [setSessionId, onDocumentNameSet, toast]
-  );
 
-  const { getRootProps, getInputProps, isDragActive, isFocused, isDragAccept, isDragReject } = useDropzone({
+      handleUpload(file);
+    }
+  }, [handleUpload, toast]);
+
+  const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
     accept: {
-      "application/pdf": [".pdf"],
+      'application/pdf': ['.pdf']
     },
     multiple: false,
-    disabled: isUploading || !!sessionId,
+    disabled: uploadState.isUploading,
   });
 
-  const handleRemoveFile = () => {
-    setFileName(null);
-    setFileUrl(null);
-    setShowPreview(false);
-    setInternalError(null);
+  const clearUpload = () => {
+    setUploadState({
+      isUploading: false,
+      progress: 0,
+      uploadedFile: null,
+      error: null,
+    });
     setSessionId(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-    toast({ title: "File Removed", description: "The document has been removed." });
   };
 
-  const getDropzoneClassName = () => {
-    let baseClasses = "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all duration-150";
-    if (isUploading || (!!sessionId && !!fileName)) {
-      baseClasses += " opacity-50 cursor-not-allowed";
-    } else {
-      baseClasses += " hover:border-sky-500/70";
-    }
+  const getDropzoneStatus = () => {
+    if (uploadState.error) return "error";
+    if (uploadState.uploadedFile) return "success";
+    if (uploadState.isUploading) return "uploading";
+    if (isDragReject) return "reject";
+    if (isDragActive) return "active";
+    return "idle";
+  };
 
-    if ((isDragActive || isFocused) && !(isUploading || (!!sessionId && !!fileName))) {
-      baseClasses += " border-sky-500 ring-2 ring-sky-500/50 bg-sky-900/20";
-    } else {
-      baseClasses += " border-neutral-700";
-    }
+  const status = getDropzoneStatus();
 
-    if (isDragReject || internalError) {
-      baseClasses += " border-red-500/70 bg-red-900/20 text-red-400";
-    } else {
-      baseClasses += " text-neutral-400";
+  const getStatusStyles = () => {
+    switch (status) {
+      case "active":
+        return "border-sky-500 bg-sky-50/50 text-sky-700";
+      case "reject":
+        return "border-red-500 bg-red-50/50 text-red-700";
+      case "error":
+        return "border-red-500 bg-red-50/50 text-red-700";
+      case "success":
+        return "border-green-500 bg-green-50/50 text-green-700";
+      case "uploading":
+        return "border-sky-500 bg-sky-50/50 text-sky-700";
+      default:
+        return "border-neutral-700 bg-neutral-900/50 text-neutral-400 hover:border-sky-500 hover:text-sky-400";
     }
+  };
 
-    if (isDragAccept && !isDragReject && !(isUploading || (!!sessionId && !!fileName))) {
-      baseClasses += " border-green-500/70 bg-green-900/20";
+  const getStatusIcon = () => {
+    switch (status) {
+      case "success":
+        return <CheckCircle className="w-8 h-8 text-green-500" />;
+      case "error":
+        return <AlertCircle className="w-8 h-8 text-red-500" />;
+      case "uploading":
+        return (
+          <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+        );
+      default:
+        return <Upload className="w-8 h-8" />;
     }
-    return baseClasses;
   };
 
   return (
     <div className="space-y-4">
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      <div {...getRootProps({ className: getDropzoneClassName(), ref: fileInputRef as any })}>
+      <div
+        {...getRootProps()}
+        className={`
+          relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer 
+          transition-all duration-200 
+          ${uploadState.isUploading ? 'cursor-not-allowed' : 'cursor-pointer'}
+          ${getStatusStyles()}
+        `}
+      >
         <input {...getInputProps()} />
-        {isUploading ? (
-          <div className="flex flex-col items-center justify-center">
-            <Loader2 className="h-10 w-10 animate-spin text-sky-400 mb-3" />
-            <p className="text-sm text-neutral-300">Processing PDF...</p>
-            <p className="text-xs text-neutral-500">Please wait.</p>
+        
+        <div className="flex flex-col items-center space-y-3">
+          {getStatusIcon()}
+          
+          <div className="space-y-1">
+            {status === "uploading" && (
+              <p className="text-sm font-medium">Processing document...</p>
+            )}
+            {status === "success" && uploadState.uploadedFile && (
+              <p className="text-sm font-medium">
+                ✓ {uploadState.uploadedFile} uploaded successfully
+              </p>
+            )}
+            {status === "error" && (
+              <p className="text-sm font-medium text-red-600">
+                ✗ {uploadState.error}
+              </p>
+            )}
+            {status === "active" && (
+              <p className="text-sm font-medium">Drop your PDF here</p>
+            )}
+            {status === "reject" && (
+              <p className="text-sm font-medium text-red-600">
+                Only PDF files are supported
+              </p>
+            )}
+            {status === "idle" && (
+              <>
+                <p className="text-sm font-medium">
+                  Drop your PDF here or click to browse
+                </p>
+                <p className="text-xs text-neutral-500">
+                  Max file size: 50MB
+                </p>
+              </>
+            )}
           </div>
-        ) : sessionId && fileName ? (
-          <div className="flex flex-col items-center justify-center text-neutral-500">
-            <FileText className="h-10 w-10 mb-3 text-green-500" />
-            <p className="text-sm text-green-400">Document <span className="font-semibold">{fileName}</span> loaded.</p>
-            <p className="text-xs">Ready for chat.</p>
-          </div>
-        ) : isDragReject || internalError ? (
-          <div className="flex flex-col items-center justify-center">
-            <AlertTriangle className="h-10 w-10 text-red-400 mb-3" />
-            <p className="text-sm">{internalError || "Invalid file type"}</p>
-            <p className="text-xs">Only PDF files are accepted.</p>
-          </div>
-        ) : isDragAccept && !isDragReject ? (
-          <div className="flex flex-col items-center justify-center">
-            <UploadCloud className="h-10 w-10 text-green-400 mb-3" />
-            <p className="text-sm text-green-400">Drop PDF here to upload</p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center">
-            <UploadCloud className="h-10 w-10 mb-3" />
-            <p className="text-sm">
-              Drag & drop a PDF file here, or click to select
+        </div>
+
+        {uploadState.isUploading && (
+          <div className="mt-4 space-y-2">
+            <Progress value={uploadState.progress} className="w-full" />
+            <p className="text-xs text-neutral-600">
+              {uploadState.progress}% complete
             </p>
-            <p className="text-xs text-neutral-500 mt-1">Max file size: 50MB</p>
           </div>
         )}
       </div>
 
-      {fileName && !isUploading && (
-        <div className="mt-4 p-3 border border-neutral-700/80 rounded-lg bg-neutral-800/60 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center overflow-hidden">
-              <FileText className="h-5 w-5 mr-2 text-sky-400 flex-shrink-0" />
-              <p className="text-sm text-neutral-200 truncate" title={fileName}>{fileName}</p>
-            </div>
-            <div className="flex items-center flex-shrink-0 space-x-2">
-              {fileUrl && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => setShowPreview(!showPreview)} 
-                  className="text-xs text-sky-400 hover:text-sky-300 hover:bg-sky-500/10 px-2 h-7"
-                >
-                  {showPreview ? <EyeOff className="h-4 w-4 mr-1.5" /> : <Eye className="h-4 w-4 mr-1.5" />}
-                  {showPreview ? "Hide" : "Preview"}
-                </Button>
-              )}
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={handleRemoveFile} 
-                className="text-red-500/80 hover:text-red-400 hover:bg-red-500/10 h-7 w-7"
-                title="Remove file"
-              >
-                <XCircle className="h-4.5 w-4.5" />
-              </Button>
+      {uploadState.uploadedFile && (
+        <div className="flex items-center justify-between p-3 bg-neutral-900 border border-neutral-700 rounded-lg">
+          <div className="flex items-center space-x-3">
+            <FileText className="w-5 h-5 text-green-400" />
+            <div>
+              <p className="text-sm font-medium text-neutral-200">
+                {uploadState.uploadedFile}
+              </p>
+              <div className="flex items-center space-x-2 text-xs text-neutral-400">
+                {uploadState.chunkCount && (
+                  <Badge variant="secondary" className="bg-neutral-800 text-neutral-300">
+                    {uploadState.chunkCount} chunks
+                  </Badge>
+                )}
+                {uploadState.processingTime && (
+                  <Badge variant="secondary" className="bg-neutral-800 text-neutral-300">
+                    {uploadState.processingTime.toFixed(2)}s
+                  </Badge>
+                )}
+              </div>
             </div>
           </div>
-          
-          {showPreview && fileUrl && (
-            <div className="mt-3 border border-neutral-700 rounded overflow-hidden aspect-[4/3] md:aspect-video bg-neutral-900">
-              <iframe 
-                src={`${fileUrl}#toolbar=0&navpanes=0&scrollbar=0`}
-                className="w-full h-full border-0"
-                title="PDF Preview"
-              />
-            </div>
-          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={clearUpload}
+            className="text-neutral-400 hover:text-red-400"
+          >
+            <X className="w-4 h-4" />
+          </Button>
         </div>
       )}
     </div>
   );
-}
+};
+
+export default FileUpload;

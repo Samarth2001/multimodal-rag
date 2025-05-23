@@ -37,12 +37,15 @@ interface ChatResponse {
   answer: string;
   sources?: string[];
   processing_time: number;
+  session_id: string;
 }
 
 interface UploadResponse {
   session_id: string;
   status: string;
   filename: string;
+  chunk_count: number;
+  processing_time: number;
 }
 
 interface EmbeddingResponse {
@@ -51,6 +54,14 @@ interface EmbeddingResponse {
     vector: number[];
   }[];
   processing_time: number;
+}
+
+interface SessionInfo {
+  session_id: string;
+  filename: string;
+  created_at: number;
+  chunk_count: number;
+  status: string;
 }
 
 // API functions
@@ -87,6 +98,15 @@ export const visualizeEmbeddings = async (text: string): Promise<EmbeddingRespon
   return response.data;
 };
 
+export const getSessions = async (): Promise<SessionInfo[]> => {
+  const response = await axios.get(`${API_URL}/sessions`);
+  return response.data;
+};
+
+export const deleteSession = async (sessionId: string): Promise<void> => {
+  await axios.delete(`${API_URL}/sessions/${sessionId}`);
+};
+
 export const checkHealth = async () => {
   try {
     const response = await apiClient.get('/health');
@@ -101,5 +121,7 @@ export default {
   uploadDocument,
   sendChatMessage,
   visualizeEmbeddings,
+  getSessions,
+  deleteSession,
   checkHealth,
 }; 

@@ -8,4 +8,13 @@ pillow
 chromadb
 openai
 python-dotenv
+nltk
+slowapi
+redis
+pydantic[email]
+python-json-logger
+structlog
+pytest
+httpx
+PyPDF2>=3.0.0
  
