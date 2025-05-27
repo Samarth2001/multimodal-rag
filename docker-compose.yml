@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.openai.com/v1}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-ada-002}
+      - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-gpt-3.5-turbo}
+      - PDF_UPLOAD_DIR=/app/uploads
+      - CHROMA_PATH=/app/chroma
+      - CORS_ORIGINS=http://localhost:3000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_PERIOD=${RATE_LIMIT_PERIOD:-60}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-50}
+    volumes:
+      - backend_uploads:/app/uploads
+      - backend_chroma:/app/chroma
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  backend_uploads:
+  backend_chroma:
+  redis_data: 

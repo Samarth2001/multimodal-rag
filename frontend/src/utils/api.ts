@@ -1,10 +1,10 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Create an axios instance with default config
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -33,39 +33,78 @@ apiClient.interceptors.response.use(
   }
 );
 
+interface ChatResponse {
+  answer: string;
+  sources?: string[];
+  processing_time: number;
+  session_id: string;
+}
+
+interface UploadResponse {
+  session_id: string;
+  status: string;
+  filename: string;
+  chunk_count: number;
+  processing_time: number;
+}
+
+interface EmbeddingResponse {
+  embeddings: {
+    word: string;
+    vector: number[];
+  }[];
+  processing_time: number;
+}
+
+interface SessionInfo {
+  session_id: string;
+  filename: string;
+  created_at: number;
+  chunk_count: number;
+  status: string;
+}
+
 // API functions
-export const uploadDocument = async (file: File) => {
+export const uploadDocument = async (file: File): Promise<UploadResponse> => {
   const formData = new FormData();
   formData.append('file', file);
   
-  try {
-    const response = await axios.post(`${API_BASE_URL}/upload`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.data?.detail) {
-      throw new Error(error.response.data.detail);
-    }
-    throw error;
-  }
+  const response = await axios.post(`${API_URL}/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return response.data;
 };
 
-export const sendChatMessage = async (question: string, sessionId: string) => {
-  try {
-    const response = await apiClient.post('/chat', {
-      question,
-      session_id: sessionId,
-    });
-    return response.data;
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.data?.detail) {
-      throw new Error(error.response.data.detail);
-    }
-    throw error;
-  }
+export const sendChatMessage = async (
+  question: string,
+  sessionId: string
+): Promise<ChatResponse> => {
+  const response = await axios.post(`${API_URL}/chat`, {
+    question,
+    session_id: sessionId,
+  });
+
+  return response.data;
+};
+
+export const visualizeEmbeddings = async (text: string): Promise<EmbeddingResponse> => {
+  const response = await axios.post(`${API_URL}/visualize-embeddings`, {
+    text,
+  });
+
+  return response.data;
+};
+
+export const getSessions = async (): Promise<SessionInfo[]> => {
+  const response = await axios.get(`${API_URL}/sessions`);
+  return response.data;
+};
+
+export const deleteSession = async (sessionId: string): Promise<void> => {
+  await axios.delete(`${API_URL}/sessions/${sessionId}`);
 };
 
 export const checkHealth = async () => {
@@ -81,5 +120,8 @@ export const checkHealth = async () => {
 export default {
   uploadDocument,
   sendChatMessage,
+  visualizeEmbeddings,
+  getSessions,
+  deleteSession,
   checkHealth,
 }; 

@@ -35,21 +35,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionName, setCurrentSessionName] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
 
-  // Load sessions from localStorage on mount
+  // Track if component is mounted to prevent hydration issues
   useEffect(() => {
-    const storedSessions = localStorage.getItem('chat-sessions');
-    if (storedSessions) {
-      setSessions(JSON.parse(storedSessions));
-    }
+    setIsMounted(true);
   }, []);
 
-  // Save sessions to localStorage whenever they change
+  // Load sessions from localStorage on mount - only after hydration
   useEffect(() => {
-    if (sessions.length > 0) {
-      localStorage.setItem('chat-sessions', JSON.stringify(sessions));
+    if (!isMounted) return;
+    
+    try {
+      const storedSessions = localStorage.getItem('chat-sessions');
+      if (storedSessions) {
+        setSessions(JSON.parse(storedSessions));
+      }
+    } catch (error) {
+      console.warn('Failed to load sessions from localStorage:', error);
     }
-  }, [sessions]);
+  }, [isMounted]);
+
+  // Save sessions to localStorage whenever they change - only after hydration
+  useEffect(() => {
+    if (!isMounted) return;
+    
+    try {
+      if (sessions.length > 0) {
+        localStorage.setItem('chat-sessions', JSON.stringify(sessions));
+      }
+    } catch (error) {
+      console.warn('Failed to save sessions to localStorage:', error);
+    }
+  }, [sessions, isMounted]);
 
   // Add a new message to the current conversation
   const addMessage = (message: Message) => {
