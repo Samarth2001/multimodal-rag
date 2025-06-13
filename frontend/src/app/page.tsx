@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, FormEvent, useEffect, useCallback } from "react";
-import { useChat } from "../context/ChatContext";
+import { useChat, Message } from "../context/ChatContext";
 // Removed useTheme as theme is now forced dark via layout.tsx
 // import { useTheme } from "../context/ThemeContext"; 
 
@@ -25,7 +25,7 @@ import SessionHistory from "../components/SessionHistory"; // Needs restyling wi
 // import FeedbackButton from "../components/FeedbackButton"; // To be integrated with ShadCN Button
 
 import { sendChatMessage } from "@/utils/api";
-import { MessageSquare, Paperclip, Send, HelpCircle, FileText, Trash2, Download, Menu } from 'lucide-react'; // Removed Settings
+import { MessageSquare, Paperclip, Send, HelpCircle, FileText, Trash2, Download, Menu, Info } from 'lucide-react'; // Removed Settings, added Info
 
 // Message type is defined in ChatContext.tsx and used implicitly by useChat hook
 
@@ -47,6 +47,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
+  const [currentSources, setCurrentSources] = useState<string[]>([]);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -84,33 +85,59 @@ export default function Home() {
 
     const userMessage = { role: "user" as const, content: question };
     addMessage(userMessage);
+    // Add an empty assistant message that will be populated by the stream
+    addMessage({ role: "assistant" as const, content: ""});
 
     const currentQuestion = question;
     setQuestion("");
     setLoading(true);
-    // setError(null); // Error is now handled by useEffect with toast
+    setCurrentSources([]);
     setProcessingTime(null);
 
-    try {
-      const data = await sendChatMessage(currentQuestion, sessionId);
-      const assistantMessage = {
-        role: "assistant" as const,
-        content: data.answer,
-      };
-      addMessage(assistantMessage);
-      setProcessingTime(data.processing_time);
-    } catch (err) {
-      console.error("Chat failed:", err);
-      const errorMessageContent = err instanceof Error ? err.message : "An error occurred processing your question.";
-      setError(errorMessageContent); // Set error to trigger toast
-      // Add a generic error message to chat as well
-      addMessage({
-        role: "assistant" as const,
-        content: "Sorry, I encountered an error. Please check notifications or try again.",
-      });
-    } finally {
-      setLoading(false);
-    }
+    await sendChatMessage(currentQuestion, sessionId, {
+      onToken: (token) => {
+        setMessages((prevMessages: Message[]) => {
+          const lastMessage = prevMessages[prevMessages.length - 1];
+          if (lastMessage && lastMessage.role === 'assistant') {
+            const updatedMessages = [...prevMessages];
+            updatedMessages[prevMessages.length - 1] = {
+              ...lastMessage,
+              content: lastMessage.content + token,
+            };
+            return updatedMessages;
+          }
+          return prevMessages;
+        });
+      },
+      onSources: (sources) => {
+        setCurrentSources(sources);
+      },
+      onComplete: (time) => {
+        setProcessingTime(time);
+        setLoading(false);
+      },
+      onError: (err) => {
+        const errorMessageContent = err instanceof Error ? err.message : "An error occurred processing your question.";
+        setError(errorMessageContent); // Set error to trigger toast
+        
+        // Update the last message to show an error state
+        setMessages((prevMessages: Message[]) => {
+            const lastMessage = prevMessages[prevMessages.length - 1];
+            if (lastMessage && lastMessage.role === 'assistant') {
+                const updatedMessages = [...prevMessages];
+                updatedMessages[prevMessages.length - 1] = {
+                    ...lastMessage,
+                    content: "Sorry, I encountered an error. Please try again.",
+                    isError: true,
+                };
+                return updatedMessages;
+            }
+            return prevMessages;
+        });
+        
+        setLoading(false);
+      },
+    });
   };
 
   const handleDocumentNameChange = (name: string) => {
@@ -430,7 +457,13 @@ export default function Home() {
                     <span className="sr-only">Send</span>
                   </Button>
                 </form>
-                {processingTime && messages.length > 0 && (
+                {loading && currentSources.length > 0 && (
+                  <div className="flex items-center justify-center text-xs text-neutral-500 pt-1">
+                    <Info className="w-3 h-3 mr-1.5" />
+                    <span>Searching in sources: {currentSources.join(', ')}</span>
+                  </div>
+                )}
+                {processingTime && !loading && messages.length > 0 && (
                   <p className="text-xs text-neutral-600 text-center">
                     Last query: {processingTime.toFixed(2)}s
                   </p>

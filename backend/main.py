@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, BackgroundTasks, HTTPException, Depends, status, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -17,6 +17,7 @@ import tempfile
 from config import Config
 from openai import OpenAI, APIError
 from contextlib import asynccontextmanager
+import json
 
 # Setup configuration and logging
 Config.validate_config()
@@ -217,110 +218,108 @@ async def upload_file(request: Request, file: UploadFile):
             detail=f"Failed to process upload: {str(e)}"
         )
 
-@app.post("/chat", response_model=ChatResponse, responses={
+async def stream_chat_responses(chat_request: ChatRequest):
+    """Generator for streaming chat responses using Server-Sent Events."""
+    start_time = time.time()
+    
+    try:
+        logger.info(f"Streaming chat request for session {chat_request.session_id}: {chat_request.question[:100]}")
+        
+        # 1. Validate session and retrieve context
+        chroma = ChromaDB()
+        try:
+            collection = chroma.get_collection(chat_request.session_id)
+        except Exception:
+            # Yield an error event for the client
+            error_message = json.dumps({"error": "Session not found", "status_code": 404})
+            yield f"event: error\ndata: {error_message}\n\n"
+            return
+
+        results = collection.query(
+            query_texts=[chat_request.question], 
+            n_results=5,
+            include=["documents", "metadatas", "distances"]
+        )
+
+        if not results or not results.get("documents") or not results["documents"][0]:
+            error_message = json.dumps({"error": "No relevant context found", "status_code": 500})
+            yield f"event: error\ndata: {error_message}\n\n"
+            return
+            
+        contexts = results["documents"][0]
+        metadatas = results.get("metadatas", [[]])[0] if results.get("metadatas") else []
+        distances = results.get("distances", [[]])[0] if results.get("distances") else []
+        
+        relevant_contexts, sources = [], []
+        for i, (context, metadata, distance) in enumerate(zip(contexts, metadatas, distances)):
+            if distance < 0.5:
+                chunk_info = f"[Chunk {metadata.get('chunk_id', i)} from {metadata.get('filename', 'document')}]"
+                relevant_contexts.append(f"{chunk_info}\n{context}")
+                sources.append(f"Chunk {metadata.get('chunk_id', i)}")
+        
+        if not relevant_contexts:
+            relevant_contexts, sources = contexts[:3], [f"Chunk {i}" for i in range(len(contexts[:3]))]
+
+        context_str = "\n\n".join(relevant_contexts)
+
+        # Yield sources found
+        sources_message = json.dumps(sources[:3])
+        yield f"event: sources\ndata: {sources_message}\n\n"
+
+        # 2. Call OpenAI API with streaming
+        client = OpenAI(api_key=Config.OPENAI_API_KEY, base_url=Config.OPENAI_API_BASE)
+        stream = client.chat.completions.create(
+            model=Config.CHAT_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful AI assistant that answers questions based on provided document context. Always base your answers on the context provided. If the context doesn't contain enough information to answer the question, say so clearly. Cite specific parts of the context when possible."
+                },
+                {
+                    "role": "user",
+                    "content": f"Context from document:\n\n{context_str}\n\nQuestion: {chat_request.question}\n\nPlease provide a comprehensive answer based on the context above."
+                }
+            ],
+            temperature=0.3,
+            max_tokens=1000,
+            stream=True,
+        )
+
+        # 3. Yield each token
+        for chunk in stream:
+            token = chunk.choices[0].delta.content
+            if token:
+                token_message = json.dumps({"token": token})
+                yield f"event: token\ndata: {token_message}\n\n"
+                await asyncio.sleep(0.01) # Small delay for smoother streaming
+
+    except APIError as e:
+        logger.error(f"OpenAI API error during stream: {str(e)}")
+        error_message = json.dumps({"error": f"LLM API error: {e}", "status_code": 500})
+        yield f"event: error\ndata: {error_message}\n\n"
+    except Exception as e:
+        logger.error(f"Chat stream error: {str(e)}")
+        error_message = json.dumps({"error": f"Error processing chat: {e}", "status_code": 500})
+        yield f"event: error\ndata: {error_message}\n\n"
+    finally:
+        # 4. Signal end of stream
+        processing_time = time.time() - start_time
+        end_message = json.dumps({"processing_time": processing_time})
+        yield f"event: end\ndata: {end_message}\n\n"
+        logger.info(f"Chat stream finished in {processing_time:.2f}s for session {chat_request.session_id}")
+
+@app.post("/chat", responses={
     400: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
     500: {"model": ErrorResponse}
 })
 @limiter.limit(f"{Config.RATE_LIMIT_REQUESTS}/minute")
 async def chat_endpoint(request: Request, chat_request: ChatRequest):
-    """Enhanced chat endpoint with better context retrieval and error handling"""
-    start_time = time.time()
-    
-    try:
-        logger.info(f"Chat request for session {chat_request.session_id}: {chat_request.question[:100]}")
-        
-        # Validate session
-        chroma = ChromaDB()
-        try:
-            collection = chroma.get_collection(chat_request.session_id)
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Session not found. Please upload a document first."
-            )
-        
-        # Get relevant context with improved retrieval
-        results = collection.query(
-            query_texts=[chat_request.question], 
-            n_results=5,  # Get more results for better context
-            include=["documents", "metadatas", "distances"]
-        )
-        
-        if not results or not results.get("documents") or not results["documents"][0]:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="No relevant context found in the document"
-            )
-            
-        # Build context with source attribution
-        contexts = results["documents"][0]
-        metadatas = results.get("metadatas", [[]])[0] if results.get("metadatas") else []
-        distances = results.get("distances", [[]])[0] if results.get("distances") else []
-        
-        # Filter and rank context by relevance
-        relevant_contexts = []
-        sources = []
-        
-        for i, (context, metadata, distance) in enumerate(zip(contexts, metadatas, distances)):
-            if distance < 0.5:  # Only include highly relevant chunks
-                chunk_info = f"[Chunk {metadata.get('chunk_id', i)} from {metadata.get('filename', 'document')}]"
-                relevant_contexts.append(f"{chunk_info}\n{context}")
-                sources.append(f"Chunk {metadata.get('chunk_id', i)}")
-        
-        if not relevant_contexts:
-            relevant_contexts = contexts[:3]  # Fallback to top 3
-            sources = [f"Chunk {i}" for i in range(len(relevant_contexts))]
-        
-        context = "\n\n".join(relevant_contexts)
-        
-        # Enhanced prompt with better instruction
-        try:
-            client = OpenAI(api_key=Config.OPENAI_API_KEY, base_url=Config.OPENAI_API_BASE)
-
-            response = client.chat.completions.create(
-                model=Config.CHAT_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful AI assistant that answers questions based on provided document context. Always base your answers on the context provided. If the context doesn't contain enough information to answer the question, say so clearly. Cite specific parts of the context when possible."
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Context from document:\n\n{context}\n\nQuestion: {chat_request.question}\n\nPlease provide a comprehensive answer based on the context above."
-                    }
-                ],
-                temperature=0.3,
-                max_tokens=1000,
-            )
-            
-            processing_time = time.time() - start_time
-            answer = response.choices[0].message.content
-            
-            logger.info(f"Chat response generated in {processing_time:.2f}s for session {chat_request.session_id}")
-            
-            return ChatResponse(
-                answer=answer,
-                sources=sources[:3],
-                processing_time=processing_time,
-                session_id=chat_request.session_id
-            )
-            
-        except APIError as e:
-            logger.error(f"OpenAI API error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"LLM API error: {str(e)}"
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chat endpoint error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing chat: {str(e)}"
-        )
+    """
+    Handles chat requests.
+    This endpoint now initiates a Server-Sent Events (SSE) stream.
+    """
+    return StreamingResponse(stream_chat_responses(chat_request), media_type="text/event-stream")
 
 @app.get("/sessions", response_model=List[SessionInfo])
 @limiter.limit("30/minute")

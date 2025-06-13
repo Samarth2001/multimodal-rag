@@ -2,9 +2,10 @@
 
 import { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 
-type Message = {
+export type Message = {
   role: 'user' | 'assistant';
   content: string;
+  isError?: boolean;
 };
 
 interface ChatSession {
@@ -18,7 +19,7 @@ interface ChatContextType {
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
   messages: Message[];
-  setMessages: (messages: Message[]) => void;
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   addMessage: (message: Message) => void;
   sessions: ChatSession[];
   currentSessionName: string | null;
