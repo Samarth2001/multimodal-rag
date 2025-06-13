@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, FormEvent, useEffect } from "react";
+import { useState, useRef, FormEvent, useEffect, useCallback } from "react";
 import { useChat } from "../context/ChatContext";
 // Removed useTheme as theme is now forced dark via layout.tsx
 // import { useTheme } from "../context/ThemeContext"; 
@@ -29,10 +29,12 @@ import { MessageSquare, Paperclip, Send, HelpCircle, FileText, Trash2, Download,
 
 // Message type is defined in ChatContext.tsx and used implicitly by useChat hook
 
+type ExportFormat = 'text' | 'json' | 'markdown';
+
 export default function Home() {
   const {
     sessionId,
-    // setSessionId, // Handled by FileUpload logic
+    setSessionId, // Now used for clearing
     messages,
     setMessages,
     addMessage,
@@ -119,12 +121,14 @@ export default function Home() {
       });
   };
   
-  const handleClearChat = () => {
-    if (messages.length > 0 && confirm('Are you sure you want to clear all messages in this chat?')) {
+  const handleClearChat = useCallback(() => {
+    if (messages.length > 0 && confirm('Are you sure you want to clear the current chat and document session?')) {
       setMessages([]);
-      toast({ title: "Chat Cleared", description: "Messages have been cleared." });
+      setSessionId(null); // Clear the session
+      setCurrentSessionName(null); // Clear the document name
+      toast({ title: "Chat Cleared", description: "The chat history and document session have been cleared." });
     }
-  };
+  }, [messages, setMessages, toast, setSessionId, setCurrentSessionName]);
 
 
   useEffect(() => {
@@ -153,10 +157,56 @@ export default function Home() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [sessionId, question, loading, messages, setMessages]); // Added messages and setMessages to dependency array for handleClearChat
+  }, [sessionId, question, loading, messages, setMessages, handleClearChat]); // Added messages and setMessages to dependency array for handleClearChat
 
-    const LeftPanelContent = () => (    <div className="h-full flex flex-col p-4 space-y-4">      <Card className="bg-neutral-900 border-neutral-800 flex-shrink-0">        <CardHeader>          <CardTitle className="text-lg text-neutral-200 flex items-center">            <Paperclip className="mr-2 h-5 w-5 text-sky-400" /> Document Upload          </CardTitle>          <CardDescription className="text-neutral-400 text-xs">            Upload a PDF to begin analysis.          </CardDescription>        </CardHeader>        <CardContent>          <FileUpload onDocumentNameSet={handleDocumentNameChange} />          {sessionId && currentSessionName && (            <div className="mt-3 p-2.5 bg-green-900/30 border border-green-700/50 rounded-md text-xs text-green-400 flex items-center">              <FileText className="mr-2 h-4 w-4" />              <span>Active: {currentSessionName}</span>            </div>          )}        </CardContent>      </Card>      <Card className="bg-neutral-900 border-neutral-800 flex-1 flex flex-col min-h-0">        <CardHeader className="flex-shrink-0">          <CardTitle className="text-lg text-neutral-200 flex items-center">            <MessageSquare className="mr-2 h-5 w-5 text-sky-400" /> Chat History          </CardTitle>           <CardDescription className="text-neutral-400 text-xs">            Review previous conversations.          </CardDescription>        </CardHeader>        <CardContent className="flex-1 p-0 min-h-0 overflow-hidden">           <ScrollArea className="h-full">            <div className="p-4">              <SessionHistory />            </div>           </ScrollArea>        </CardContent>      </Card>      {/* Removed TechExplainer */}    </div>  );
+  const handleExport = (format: ExportFormat) => {
+    if (messages.length === 0) {
+      toast({
+        title: "Export Failed",
+        description: "There are no messages to export.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    let content = '';
+    const filename = `${currentSessionName || 'chat-export'}-${new Date().toISOString().split('T')[0]}`;
+    
+    switch (format) {
+      case 'text':
+        content = messages.map(msg => `${msg.role.toUpperCase()}: ${msg.content}`).join('\\n\\n');
+        downloadFile(`${filename}.txt`, content, 'text/plain');
+        break;
+      case 'json':
+        content = JSON.stringify(messages, null, 2);
+        downloadFile(`${filename}.json`, content, 'application/json');
+        break;
+      case 'markdown':
+        content = messages.map(msg => {
+          const role = msg.role === 'user' ? 'You' : 'AI Assistant';
+          return `### ${role}\\n\\n${msg.content}`;
+        }).join('\\n\\n');
+        downloadFile(`${filename}.md`, content, 'text/markdown');
+        break;
+    }
+    
+    toast({
+      title: "Export Successful",
+      description: `Chat exported as ${format.toUpperCase()}.`
+    });
+  };
 
+  const downloadFile = (filename: string, content: string, contentType: string) => {
+    const blob = new Blob([content], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="h-screen flex flex-col bg-black text-neutral-200 overflow-hidden">
@@ -198,12 +248,6 @@ export default function Home() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            <Button variant="ghost" asChild className="text-neutral-400 hover:text-sky-400 hover:bg-neutral-800">
-              <a href="/embeddings">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5 h-4 w-4"><path d="M10.5 20.5 2.5 12l8-8.5"/><path d="m13.5 3.5 8 8.5-8 8.5"/></svg>
-                Visualizer
-              </a>
-            </Button>
             {/* <ThemeToggle /> REMOVED */}
             {/* Removed RAG badge for cleaner UI */}
           </div>
@@ -215,7 +259,39 @@ export default function Home() {
         <div className="fixed inset-0 z-40 md:hidden">
            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)}></div>
            <div className="relative z-50 h-full w-72 bg-neutral-950 border-r border-neutral-800 shadow-xl">
-             <LeftPanelContent />
+             {/* Inlined Left Panel Content for Mobile */}
+             <div className="h-full flex flex-col p-4 space-y-4">
+                <Card className="bg-neutral-900 border-neutral-800 flex-shrink-0">
+                  <CardHeader>
+                    <CardTitle className="text-lg text-neutral-200 flex items-center">
+                      <Paperclip className="mr-2 h-5 w-5 text-sky-400" /> Document Upload
+                    </CardTitle>
+                    <CardDescription className="text-neutral-400 text-xs">
+                      Upload a PDF to begin analysis.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <FileUpload onDocumentNameSet={handleDocumentNameChange} />
+                  </CardContent>
+                </Card>
+                <Card className="bg-neutral-900 border-neutral-800 flex-1 flex flex-col min-h-0">
+                  <CardHeader className="flex-shrink-0">
+                    <CardTitle className="text-lg text-neutral-200 flex items-center">
+                      <MessageSquare className="mr-2 h-5 w-5 text-sky-400" /> Chat History
+                    </CardTitle>
+                    <CardDescription className="text-neutral-400 text-xs">
+                      Review previous conversations.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 p-0 min-h-0 overflow-hidden">
+                    <ScrollArea className="h-full">
+                      <div className="p-4">
+                        <SessionHistory />
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </div>
            </div>
         </div>
       )}
@@ -223,7 +299,39 @@ export default function Home() {
       <main className="flex-1 container mx-auto px-4 py-4 md:py-6 flex gap-6 overflow-hidden min-h-0">
         {/* Left Sidebar (Desktop) */}
         <aside className="hidden md:block md:w-1/3 lg:w-1/4 xl:w-1/5 flex-shrink-0">
-           <LeftPanelContent />
+           {/* Inlined Left Panel Content for Desktop */}
+           <div className="h-full flex flex-col p-4 space-y-4 bg-neutral-950/50 rounded-lg">
+              <Card className="bg-neutral-900 border-neutral-800 flex-shrink-0">
+                <CardHeader>
+                  <CardTitle className="text-lg text-neutral-200 flex items-center">
+                    <Paperclip className="mr-2 h-5 w-5 text-sky-400" /> Document Upload
+                  </CardTitle>
+                  <CardDescription className="text-neutral-400 text-xs">
+                    Upload a PDF to begin analysis.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FileUpload onDocumentNameSet={handleDocumentNameChange} />
+                </CardContent>
+              </Card>
+              <Card className="bg-neutral-900 border-neutral-800 flex-1 flex flex-col min-h-0">
+                <CardHeader className="flex-shrink-0">
+                  <CardTitle className="text-lg text-neutral-200 flex items-center">
+                    <MessageSquare className="mr-2 h-5 w-5 text-sky-400" /> Chat History
+                  </CardTitle>
+                  <CardDescription className="text-neutral-400 text-xs">
+                    Review previous conversations.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 p-0 min-h-0 overflow-hidden">
+                  <ScrollArea className="h-full">
+                    <div className="p-4">
+                      <SessionHistory />
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+            </div>
         </aside>
 
         {/* Chat Area */}
@@ -248,11 +356,15 @@ export default function Home() {
                        </Button>
                     </DialogTrigger>
                     <DialogContent className="bg-neutral-900 border-neutral-800 text-neutral-200">
-                       <DialogHeader><DialogTitle>Export Chat</DialogTitle></DialogHeader>
-                       <p className="text-sm text-neutral-400">Export functionality coming soon!</p>
-                       <DialogFooter>
-                          <DialogClose asChild><Button variant="outline" className="border-neutral-700 hover:bg-neutral-800">Close</Button></DialogClose>
-                       </DialogFooter>
+                       <DialogHeader>
+                          <DialogTitle>Export Chat</DialogTitle>
+                          <DialogDescription>Select a format to download your conversation.</DialogDescription>
+                       </DialogHeader>
+                       <div className="flex justify-around py-4">
+                          <Button variant="outline" onClick={() => handleExport('markdown')}>Markdown</Button>
+                          <Button variant="outline" onClick={() => handleExport('text')}>Text</Button>
+                          <Button variant="outline" onClick={() => handleExport('json')}>JSON</Button>
+                       </div>
                     </DialogContent>
                   </Dialog>
                 </div>

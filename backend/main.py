@@ -4,11 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from processing.pdf_processor import PDFProcessor
 from app.services.chroma_service import ChromaDB
 import uuid
-import nltk
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
@@ -17,26 +16,31 @@ import time
 import tempfile
 from config import Config
 from openai import OpenAI, APIError
+from contextlib import asynccontextmanager
 
 # Setup configuration and logging
 Config.validate_config()
 Config.setup_logging()
 logger = logging.getLogger(__name__)
 
-# Download NLTK data
-try:
-    nltk.download('punkt_tab', quiet=True)
-    nltk.download('averaged_perceptron_tagger_eng', quiet=True)
-except Exception as e:
-    logger.warning(f"NLTK download error: {e}")
-
 # Rate limiter setup
 limiter = Limiter(key_func=get_remote_address)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic
+    logger.info("Starting Document AI Assistant API")
+    Config.validate_config()
+    logger.info("Configuration validated successfully")
+    yield
+    # Shutdown logic (if any)
+    logger.info("Shutting down Document AI Assistant API")
 
 app = FastAPI(
     title="Document AI Assistant API",
     description="Backend API for RAG-based document analysis",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add rate limiting
@@ -62,8 +66,9 @@ class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000, description="Question to ask about the document")
     session_id: str = Field(..., min_length=1, description="Session ID from document upload")
 
-    @validator('question')
-    def validate_question(cls, v):
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v: str) -> str:
         if not v.strip():
             raise ValueError('Question cannot be empty')
         return v.strip()
@@ -87,13 +92,6 @@ class SessionInfo(BaseModel):
     created_at: float
     chunk_count: int
     status: str
-
-class TextEmbeddingRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=500, description="Text to analyze and visualize")
-
-class TextEmbeddingResponse(BaseModel):
-    embeddings: List[Dict[str, Any]]
-    processing_time: float
 
 # Session management
 active_sessions: Dict[str, SessionInfo] = {}
@@ -353,68 +351,6 @@ async def delete_session(request: Request, session_id: str):
             detail=f"Error deleting session: {str(e)}"
         )
 
-@app.post("/visualize-embeddings", response_model=TextEmbeddingResponse, responses={
-    400: {"model": ErrorResponse},
-    500: {"model": ErrorResponse}
-})
-@limiter.limit("10/minute")
-async def visualize_embeddings(request: Request, embed_request: TextEmbeddingRequest):
-    """Generate embeddings for text visualization with rate limiting"""
-    start_time = time.time()
-    
-    try:
-        # Process the text
-        text = embed_request.text
-        words = set([word.lower() for word in nltk.word_tokenize(text) if word.isalnum() and len(word) > 2])
-        
-        if not words:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No valid words found in the input text"
-            )
-        
-        if len(words) > 20:  # Limit number of words to process
-            words = list(words)[:20]
-        
-        try:
-            client = OpenAI(api_key=Config.OPENAI_API_KEY, base_url=Config.OPENAI_API_BASE)
-            
-            response = client.embeddings.create(
-                model=Config.EMBEDDING_MODEL,
-                input=list(words)
-            )
-            
-            # Process embeddings for visualization
-            word_embeddings = []
-            for i, word in enumerate(words):
-                embedding = response.data[i].embedding
-                word_embeddings.append({
-                    "word": word,
-                    "vector": embedding,
-                })
-            
-            processing_time = time.time() - start_time
-            return TextEmbeddingResponse(
-                embeddings=word_embeddings,
-                processing_time=processing_time
-            )
-            
-        except APIError as e:
-            logger.error(f"Embedding API error: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Embedding API error: {str(e)}"
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Embedding endpoint error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing embeddings: {str(e)}"
-        )
-
 @app.get("/health")
 async def health_check():
     """Enhanced health check with dependency status"""
@@ -445,14 +381,6 @@ async def health_check():
                 "timestamp": time.time()
             }
         )
-
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup"""
-    logger.info("Starting Document AI Assistant API")
-    Config.validate_config()
-    logger.info("Configuration validated successfully")
 
 if __name__ == "__main__":
     import uvicorn

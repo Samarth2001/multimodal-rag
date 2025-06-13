@@ -3,16 +3,37 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { getSessions, deleteSession } from "@/utils/api";
 import { useChat } from "@/context/ChatContext";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  FileText, 
-  Trash2, 
-  RefreshCw, 
-  Clock, 
+import {
+  FileText,
+  Trash2,
+  RefreshCw,
   FolderOpen,
-  AlertCircle 
+  AlertCircle,
+  MoreVertical,
+  CheckCircle,
 } from "lucide-react";
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 interface SessionInfo {
   session_id: string;
@@ -91,36 +112,19 @@ const SessionHistory: React.FC = () => {
   }, [toast, lastLoadTime, isMounted]);
 
   const handleDeleteSession = async (sessionToDelete: string) => {
-    if (!confirm("Are you sure you want to delete this session? This action cannot be undone.")) {
-      return;
-    }
-
     try {
       await deleteSession(sessionToDelete);
       setSessions(prev => prev.filter(s => s.session_id !== sessionToDelete));
-      
-      // If the deleted session was the current one, clear it
       if (sessionId === sessionToDelete) {
         setSessionId(null);
       }
-
       toast({
         title: "Session Deleted",
-        description: "Session and all associated data have been removed.",
+        description: "The session has been removed.",
+        variant: "default",
       });
-    } catch (err: unknown) {
+    } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to delete session";
-      
-      // Handle rate limiting for delete
-      if (err && typeof err === 'object' && 'status' in err && (err as APIError).status === 429) {
-        toast({
-          variant: "destructive",
-          title: "Rate Limited",
-          description: "Too many requests. Please wait a moment before trying again.",
-        });
-        return;
-      }
-      
       toast({
         variant: "destructive",
         title: "Delete Failed",
@@ -139,32 +143,6 @@ const SessionHistory: React.FC = () => {
       title: "Session Loaded",
       description: `Switched to ${session.filename}`,
     });
-  };
-
-  const handleRefresh = () => {
-    loadSessions(true); // Force refresh
-  };
-
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return 'bg-green-600';
-      case 'processing':
-        return 'bg-yellow-600';
-      case 'error':
-        return 'bg-red-600';
-      default:
-        return 'bg-neutral-600';
-    }
   };
 
   // Only load sessions after component is mounted to prevent hydration issues
@@ -207,7 +185,7 @@ const SessionHistory: React.FC = () => {
         <Button 
           variant="outline" 
           size="sm" 
-          onClick={handleRefresh}
+          onClick={() => loadSessions()}
           className="border-neutral-700 hover:bg-neutral-800"
         >
           <RefreshCw className="w-4 h-4 mr-2" />
@@ -229,76 +207,76 @@ const SessionHistory: React.FC = () => {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between px-1">
         <p className="text-xs text-neutral-500 font-medium">
           {sessions.length} session{sessions.length !== 1 ? 's' : ''}
         </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={loading}
-          className="h-6 px-2 text-neutral-400 hover:text-neutral-200"
-        >
+        <Button variant="ghost" size="sm" onClick={() => loadSessions()} disabled={loading} className="h-7 px-2 text-neutral-400 hover:text-neutral-200">
           <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
         </Button>
       </div>
 
       <div className="space-y-2">
         {sessions.map((session) => (
-          <div
+          <Card
             key={session.session_id}
+            onClick={() => handleSelectSession(session)}
             className={`
-              group relative p-3 rounded-lg border cursor-pointer transition-all duration-200
+              group transition-all duration-200 cursor-pointer
+              border 
               ${sessionId === session.session_id 
-                ? 'bg-sky-900/30 border-sky-700 ring-1 ring-sky-700/50' 
-                : 'bg-neutral-900/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'
+                ? 'bg-sky-900/40 border-sky-700/80 ring-2 ring-sky-700/60' 
+                : 'bg-neutral-900/50 border-neutral-800 hover:bg-neutral-800/60 hover:border-neutral-700'
               }
             `}
-            onClick={() => handleSelectSession(session)}
           >
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center space-x-2 mb-1">
-                  <FileText className="w-4 h-4 text-neutral-400 flex-shrink-0" />
-                  <span className="text-sm font-medium text-neutral-200 truncate">
-                    {session.filename}
-                  </span>
-                  {sessionId === session.session_id && (
-                    <Badge 
-                      variant="secondary" 
-                      className="bg-sky-800 text-sky-200 text-xs px-1.5 py-0.5"
-                    >
-                      Active
-                    </Badge>
-                  )}
+            <CardContent className="p-3 flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`flex-shrink-0 h-8 w-8 rounded-md flex items-center justify-center ${sessionId === session.session_id ? 'bg-sky-800/70' : 'bg-neutral-800'}`}>
+                  {sessionId === session.session_id ? <CheckCircle className="h-4 w-4 text-sky-400" /> : <FileText className="h-4 w-4 text-neutral-400" />}
                 </div>
-                
-                <div className="flex items-center space-x-3 text-xs text-neutral-500">
-                  <div className="flex items-center space-x-1">
-                    <Clock className="w-3 h-3" />
-                    <span>{formatDate(session.created_at)}</span>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    <div className={`w-2 h-2 rounded-full ${getStatusColor(session.status)}`} />
-                    <span>{session.chunk_count} chunks</span>
-                  </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-200 truncate">{session.filename}</p>
+                  <p className="text-xs text-neutral-400">
+                    {session.chunk_count} chunks
+                  </p>
                 </div>
               </div>
 
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteSession(session.session_id);
-                }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 text-neutral-500 hover:text-red-400"
-              >
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </div>
-          </div>
+              <AlertDialog>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                       <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    <AlertDialogTrigger asChild>
+                      <DropdownMenuItem className="text-red-400 focus:text-red-400 focus:bg-red-900/50">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </AlertDialogTrigger>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete the session and its data. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => handleDeleteSession(session.session_id)} className="bg-red-600 hover:bg-red-700">
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>

@@ -48,14 +48,6 @@ interface UploadResponse {
   processing_time: number;
 }
 
-interface EmbeddingResponse {
-  embeddings: {
-    word: string;
-    vector: number[];
-  }[];
-  processing_time: number;
-}
-
 interface SessionInfo {
   session_id: string;
   filename: string;
@@ -90,14 +82,6 @@ export const sendChatMessage = async (
   return response.data;
 };
 
-export const visualizeEmbeddings = async (text: string): Promise<EmbeddingResponse> => {
-  const response = await axios.post(`${API_URL}/visualize-embeddings`, {
-    text,
-  });
-
-  return response.data;
-};
-
 export const getSessions = async (): Promise<SessionInfo[]> => {
   const response = await axios.get(`${API_URL}/sessions`);
   return response.data;
@@ -117,11 +101,12 @@ export const checkHealth = async () => {
   }
 };
 
-export default {
+const api = {
   uploadDocument,
   sendChatMessage,
-  visualizeEmbeddings,
   getSessions,
   deleteSession,
   checkHealth,
-}; 
+};
+
+export default api; 
