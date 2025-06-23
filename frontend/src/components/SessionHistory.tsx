@@ -1,126 +1,56 @@
 "use client";
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { getSessions, deleteSession } from "@/utils/api";
-import { useChat } from "@/context/ChatContext";
+import React, { useState, useEffect } from "react";
+import useChatStore from "@/store/chatStore";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { 
-  FileText, 
-  Trash2, 
-  RefreshCw, 
-  Clock, 
+import {
+  FileText,
+  Trash2,
+  RefreshCw,
   FolderOpen,
-  AlertCircle 
+  MoreVertical,
+  CheckCircle,
+  MessageCircle,
+  Clock,
 } from "lucide-react";
-
-interface SessionInfo {
-  session_id: string;
-  filename: string;
-  created_at: number;
-  chunk_count: number;
-  status: string;
-}
-
-interface APIError extends Error {
-  status?: number;
-}
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import type { ChatSession } from "@/utils/db";
 
 const SessionHistory: React.FC = () => {
-  const { sessionId, setSessionId } = useChat();
+  const { 
+    sessions, 
+    sessionId, 
+    loadSession, 
+    deleteSession,
+    isLoadingSessions
+  } = useChatStore();
+  
   const { toast } = useToast();
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
-  const [lastLoadTime, setLastLoadTime] = useState<number>(0);
-  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Track if component is mounted to prevent hydration issues
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  const loadSessions = useCallback(async (force: boolean = false) => {
-    // Prevent too frequent requests (minimum 2 seconds between calls)
-    const now = Date.now();
-    if (!force && now - lastLoadTime < 2000) {
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const sessionList = await getSessions();
-      setSessions(sessionList);
-      setLastLoadTime(now);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to load sessions";
-      
-      // Handle rate limiting specifically
-      if (err && typeof err === 'object' && 'status' in err && (err as APIError).status === 429) {
-        setError("Too many requests. Please wait a moment before refreshing.");
-        // Don't show toast for rate limiting to avoid spam
-        console.warn("Rate limited on sessions endpoint");
-        
-        // Clear the timeout if one exists
-        if (loadTimeoutRef.current) {
-          clearTimeout(loadTimeoutRef.current);
-        }
-        
-        // Retry after 10 seconds for rate limiting
-        loadTimeoutRef.current = setTimeout(() => {
-          if (isMounted) {
-            loadSessions(true);
-          }
-        }, 10000);
-        
-        return;
-      }
-      
-      setError(errorMessage);
-      toast({
-        variant: "destructive",
-        title: "Failed to Load Sessions",
-        description: errorMessage,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [toast, lastLoadTime, isMounted]);
-
   const handleDeleteSession = async (sessionToDelete: string) => {
-    if (!confirm("Are you sure you want to delete this session? This action cannot be undone.")) {
-      return;
-    }
-
     try {
       await deleteSession(sessionToDelete);
-      setSessions(prev => prev.filter(s => s.session_id !== sessionToDelete));
-      
-      // If the deleted session was the current one, clear it
-      if (sessionId === sessionToDelete) {
-        setSessionId(null);
-      }
-
       toast({
         title: "Session Deleted",
-        description: "Session and all associated data have been removed.",
+        description: "The conversation has been removed.",
+        variant: "default",
       });
-    } catch (err: unknown) {
+    } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to delete session";
-      
-      // Handle rate limiting for delete
-      if (err && typeof err === 'object' && 'status' in err && (err as APIError).status === 429) {
-        toast({
-          variant: "destructive",
-          title: "Rate Limited",
-          description: "Too many requests. Please wait a moment before trying again.",
-        });
-        return;
-      }
-      
       toast({
         variant: "destructive",
         title: "Delete Failed",
@@ -129,180 +59,207 @@ const SessionHistory: React.FC = () => {
     }
   };
 
-  const handleSelectSession = (session: SessionInfo) => {
-    if (sessionId === session.session_id) {
+  const handleSelectSession = (session: ChatSession) => {
+    if (sessionId === session.id) {
       return; // Already selected
     }
     
-    setSessionId(session.session_id);
+    loadSession(session.id);
     toast({
       title: "Session Loaded",
-      description: `Switched to ${session.filename}`,
+      description: `Switched to ${session.name}`,
     });
   };
 
-  const handleRefresh = () => {
-    loadSessions(true); // Force refresh
-  };
-
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return 'bg-green-600';
-      case 'processing':
-        return 'bg-yellow-600';
-      case 'error':
-        return 'bg-red-600';
-      default:
-        return 'bg-neutral-600';
-    }
-  };
-
-  // Only load sessions after component is mounted to prevent hydration issues
-  useEffect(() => {
-    if (isMounted) {
-      loadSessions();
-    }
-    
-    // Cleanup timeout on unmount
-    return () => {
-      if (loadTimeoutRef.current) {
-        clearTimeout(loadTimeoutRef.current);
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInMinutes = (now.getTime() - date.getTime()) / (1000 * 60);
+      
+      if (diffInMinutes < 1) {
+        return "Just now";
+      } else if (diffInMinutes < 60) {
+        return `${Math.floor(diffInMinutes)}m ago`;
+      } else if (diffInMinutes < 1440) {
+        return `${Math.floor(diffInMinutes / 60)}h ago`;
+      } else if (diffInMinutes < 2880) {
+        return "Yesterday";
+      } else {
+        return date.toLocaleDateString(undefined, { 
+          month: 'short', 
+          day: 'numeric',
+          year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+        });
       }
-    };
-  }, [isMounted, loadSessions]);
+    } catch {
+      return "Unknown";
+    }
+  };
 
-  // Don't render anything during initial hydration
   if (!isMounted) {
     return (
       <div className="flex items-center justify-center py-8">
-        <span className="text-sm text-neutral-500">Loading...</span>
+        <div className="flex items-center space-x-3">
+          <div className="w-4 h-4 border-2 border-zinc-700/30 border-t-zinc-400 rounded-full animate-spin" />
+          <span className="text-sm text-zinc-500">Loading sessions...</span>
+        </div>
       </div>
     );
   }
 
-  if (loading && sessions.length === 0) {
+  if (isLoadingSessions && sessions.length === 0) {
     return (
       <div className="flex items-center justify-center py-8">
-        <RefreshCw className="w-6 h-6 animate-spin text-neutral-400" />
-        <span className="ml-2 text-sm text-neutral-500">Loading sessions...</span>
-      </div>
-    );
-  }
-
-  if (error && sessions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-8 text-center">
-        <AlertCircle className="w-8 h-8 text-red-400 mb-2" />
-        <p className="text-sm text-red-400 mb-3">{error}</p>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleRefresh}
-          className="border-neutral-700 hover:bg-neutral-800"
-        >
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Retry
-        </Button>
+        <div className="flex items-center space-x-3">
+          <RefreshCw className="w-4 h-4 animate-spin text-zinc-400" />
+          <span className="text-sm text-zinc-500">Loading conversations...</span>
+        </div>
       </div>
     );
   }
 
   if (sessions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-center">
-        <FolderOpen className="w-8 h-8 text-neutral-600 mb-2" />
-        <p className="text-sm text-neutral-500 mb-1">No documents uploaded yet</p>
-        <p className="text-xs text-neutral-600">Upload a PDF to start analyzing</p>
+      <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 px-4">
+        <div className="p-4 rounded-xl bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/30">
+          <FolderOpen className="w-6 h-6 text-zinc-500" />
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm text-zinc-400 font-medium">No conversations yet</p>
+          <p className="text-xs text-zinc-600 max-w-xs leading-relaxed">
+            Upload a PDF document to start your first conversation
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-neutral-500 font-medium">
-          {sessions.length} session{sessions.length !== 1 ? 's' : ''}
-        </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleRefresh}
-          disabled={loading}
-          className="h-6 px-2 text-neutral-400 hover:text-neutral-200"
-        >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-        </Button>
-      </div>
-
-      <div className="space-y-2">
-        {sessions.map((session) => (
-          <div
-            key={session.session_id}
-            className={`
-              group relative p-3 rounded-lg border cursor-pointer transition-all duration-200
-              ${sessionId === session.session_id 
-                ? 'bg-sky-900/30 border-sky-700 ring-1 ring-sky-700/50' 
-                : 'bg-neutral-900/50 border-neutral-800 hover:bg-neutral-800/50 hover:border-neutral-700'
-              }
-            `}
+    <div className="space-y-2">
+      {sessions.map((session, index) => {
+        const isSelected = sessionId === session.id;
+        return (
+          <Card
+            key={session.id}
             onClick={() => handleSelectSession(session)}
+            className={`
+              group transition-all duration-300 cursor-pointer relative overflow-hidden border
+              ${isSelected 
+                ? 'bg-gradient-to-br from-zinc-800/80 to-zinc-900/60 border-zinc-700/60 shadow-lg shadow-zinc-900/20 ring-1 ring-zinc-700/30' 
+                : 'bg-gradient-to-br from-zinc-900/60 to-zinc-950/40 border-zinc-800/40 hover:border-zinc-700/60 hover:shadow-md hover:bg-gradient-to-br hover:from-zinc-800/40 hover:to-zinc-900/60'
+              }
+              backdrop-blur-sm transform-gpu
+            `}
+            style={{
+              animationDelay: `${index * 30}ms`,
+              animation: 'fadeInUp 0.4s ease-out forwards'
+            }}
           >
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center space-x-2 mb-1">
-                  <FileText className="w-4 h-4 text-neutral-400 flex-shrink-0" />
-                  <span className="text-sm font-medium text-neutral-200 truncate">
-                    {session.filename}
-                  </span>
-                  {sessionId === session.session_id && (
-                    <Badge 
-                      variant="secondary" 
-                      className="bg-sky-800 text-sky-200 text-xs px-1.5 py-0.5"
-                    >
-                      Active
-                    </Badge>
-                  )}
-                </div>
-                
-                <div className="flex items-center space-x-3 text-xs text-neutral-500">
-                  <div className="flex items-center space-x-1">
-                    <Clock className="w-3 h-3" />
-                    <span>{formatDate(session.created_at)}</span>
+            {isSelected && (
+              <div className="absolute inset-0 bg-gradient-to-r from-zinc-700/10 via-transparent to-zinc-700/10 pointer-events-none" />
+            )}
+            
+            <CardContent className="p-3 relative z-10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className={`flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                    isSelected 
+                      ? 'bg-gradient-to-br from-zinc-700/40 to-zinc-800/40 shadow-sm shadow-zinc-900/30 ring-1 ring-zinc-700/20' 
+                      : 'bg-gradient-to-br from-zinc-800/40 to-zinc-900/40 group-hover:from-zinc-700/50 group-hover:to-zinc-800/50'
+                  }`}>
+                    {isSelected ? (
+                      <CheckCircle className="h-4 w-4 text-zinc-300" />
+                    ) : (
+                      <FileText className="h-4 w-4 text-zinc-400 group-hover:text-zinc-300 transition-colors" />
+                    )}
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <div className={`w-2 h-2 rounded-full ${getStatusColor(session.status)}`} />
-                    <span>{session.chunk_count} chunks</span>
+                  
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className={`text-sm font-medium truncate transition-colors duration-300 ${
+                      isSelected ? 'text-zinc-200' : 'text-zinc-300 group-hover:text-zinc-200'
+                    }`} title={session.name}>
+                      {session.name}
+                    </p>
+                    
+                    <div className="flex items-center gap-4 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <MessageCircle className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+                        <span className={`transition-colors duration-300 ${
+                          isSelected ? 'text-zinc-400' : 'text-zinc-500 group-hover:text-zinc-400'
+                        }`}>
+                          {session.messages.length}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+                        <span className={`transition-colors duration-300 ${
+                          isSelected ? 'text-zinc-400' : 'text-zinc-500 group-hover:text-zinc-400'
+                        }`}>
+                          {formatDate(session.lastUpdated)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteSession(session.session_id);
-                }}
-                className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 text-neutral-500 hover:text-red-400"
-              >
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className={`h-7 w-7 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-300 ${
+                        isSelected 
+                          ? 'text-zinc-300 hover:bg-zinc-700/30 hover:text-zinc-200' 
+                          : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-300'
+                      }`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreVertical className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent 
+                    align="end" 
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-zinc-900/95 border-zinc-800/50 backdrop-blur-sm shadow-xl"
+                  >
+                    <DropdownMenuItem 
+                      onSelect={() => handleDeleteSession(session.id)} 
+                      className="text-red-400 hover:text-red-300 hover:bg-red-900/30 cursor-pointer transition-colors"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 };
+
+const styles = `
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+if (typeof document !== 'undefined' && !document.getElementById('session-history-styles')) {
+  const styleSheet = document.createElement('style');
+  styleSheet.id = 'session-history-styles';
+  styleSheet.textContent = styles;
+  document.head.appendChild(styleSheet);
+}
 
 export default SessionHistory; 

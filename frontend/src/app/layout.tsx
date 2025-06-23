@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { ChatProvider } from "../context/ChatContext";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -29,7 +28,7 @@ export default function RootLayout({
           enableSystem={false}
           forcedTheme="dark"
         >
-          <ChatProvider>{children}</ChatProvider>
+          {children}
           <Toaster />
         </NextThemesProvider>
       </body>

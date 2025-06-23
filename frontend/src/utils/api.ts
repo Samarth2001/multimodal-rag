@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// Create an axios instance with default config
+// No longer using axios for chat, but keeping for other simple requests.
 const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
@@ -10,49 +10,11 @@ const apiClient = axios.create({
   },
 });
 
-// Intercept responses for unified error handling
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    let errorMessage = 'An unknown error occurred';
-    
-    if (error.response) {
-      // The server responded with a status code outside of 2xx
-      const { data, status } = error.response;
-      errorMessage = data?.detail || `Server error (${status})`;
-    } else if (error.request) {
-      // The request was made but no response was received
-      errorMessage = 'No response from server. Please check your connection.';
-    } else {
-      // Something happened in setting up the request
-      errorMessage = error.message || 'Failed to send request';
-    }
-    
-    console.error('API error:', errorMessage);
-    return Promise.reject(new Error(errorMessage));
-  }
-);
-
-interface ChatResponse {
-  answer: string;
-  sources?: string[];
-  processing_time: number;
-  session_id: string;
-}
-
 interface UploadResponse {
   session_id: string;
   status: string;
   filename: string;
   chunk_count: number;
-  processing_time: number;
-}
-
-interface EmbeddingResponse {
-  embeddings: {
-    word: string;
-    vector: number[];
-  }[];
   processing_time: number;
 }
 
@@ -64,47 +26,112 @@ interface SessionInfo {
   status: string;
 }
 
+// Type for the streaming data callbacks
+interface StreamCallbacks {
+  onToken: (token: string) => void;
+  onSources: (sources: string[]) => void;
+  onComplete: (processingTime: number) => void;
+  onError: (error: Error) => void;
+}
+
 // API functions
 export const uploadDocument = async (file: File): Promise<UploadResponse> => {
   const formData = new FormData();
   formData.append('file', file);
   
-  const response = await axios.post(`${API_URL}/upload`, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-
-  return response.data;
+  // Using fetch for consistency and to avoid multiple HTTP clients
+  try {
+    const response = await fetch(`${API_URL}/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+     console.error('Upload error:', error);
+     throw error;
+  }
 };
 
 export const sendChatMessage = async (
   question: string,
-  sessionId: string
-): Promise<ChatResponse> => {
-  const response = await axios.post(`${API_URL}/chat`, {
-    question,
-    session_id: sessionId,
-  });
+  sessionId: string,
+  callbacks: StreamCallbacks
+): Promise<void> => {
+  const { onToken, onSources, onComplete, onError } = callbacks;
+  
+  try {
+    const response = await fetch(`${API_URL}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify({
+        question,
+        session_id: sessionId,
+      }),
+    });
 
-  return response.data;
-};
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    }
 
-export const visualizeEmbeddings = async (text: string): Promise<EmbeddingResponse> => {
-  const response = await axios.post(`${API_URL}/visualize-embeddings`, {
-    text,
-  });
+    if (!response.body) {
+      throw new Error('Response body is null');
+    }
 
-  return response.data;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() || ''; // Keep the last, possibly incomplete line
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          const event = line.substring(7, line.indexOf('\n')).trim();
+          const data = line.substring(line.indexOf('data: ') + 6).trim();
+          
+          try {
+            const parsedData = JSON.parse(data);
+            if (event === 'token') {
+              onToken(parsedData.token);
+            } else if (event === 'sources') {
+              onSources(parsedData);
+            } else if (event === 'end') {
+              onComplete(parsedData.processing_time);
+            } else if (event === 'error') {
+               throw new Error(parsedData.error || 'Unknown stream error');
+            }
+          } catch (e) {
+            console.error('Failed to parse stream data chunk:', data, e);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Chat stream failed:', err);
+    onError(err instanceof Error ? err : new Error('An unknown error occurred during the stream.'));
+  }
 };
 
 export const getSessions = async (): Promise<SessionInfo[]> => {
-  const response = await axios.get(`${API_URL}/sessions`);
+  const response = await apiClient.get('/sessions');
   return response.data;
 };
 
 export const deleteSession = async (sessionId: string): Promise<void> => {
-  await axios.delete(`${API_URL}/sessions/${sessionId}`);
+  await apiClient.delete(`/sessions/${sessionId}`);
 };
 
 export const checkHealth = async () => {
@@ -117,11 +144,12 @@ export const checkHealth = async () => {
   }
 };
 
-export default {
+const api = {
   uploadDocument,
   sendChatMessage,
-  visualizeEmbeddings,
   getSessions,
   deleteSession,
   checkHealth,
-}; 
+};
+
+export default api; 

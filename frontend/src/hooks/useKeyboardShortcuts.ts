@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { useTheme } from '@/context/ThemeContext';
+
 type ShortcutHandler = () => void;
 
 interface ShortcutConfig {
@@ -11,8 +11,6 @@ interface ShortcutConfig {
 }
 
 export function useKeyboardShortcuts(shortcuts: ShortcutConfig[]) {
-  const { toggleTheme } = useTheme();
- 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       // Skip if user is typing in an input, textarea, or contenteditable
@@ -40,13 +38,6 @@ export function useKeyboardShortcuts(shortcuts: ShortcutConfig[]) {
         }
       }
 
-      // Handle Ctrl+D for dark mode toggle
-      if (event.ctrlKey && event.key === 'd') {
-        event.preventDefault();
-        toggleTheme();
-         return;
-      }
-
       // Process other configured shortcuts
       for (const shortcut of shortcuts) {
         if (
@@ -61,7 +52,7 @@ export function useKeyboardShortcuts(shortcuts: ShortcutConfig[]) {
         }
       }
     },
-    [shortcuts, toggleTheme]
+    [shortcuts]
   );
 
   useEffect(() => {
