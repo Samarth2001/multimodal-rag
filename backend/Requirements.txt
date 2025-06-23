@@ -6,7 +6,7 @@ unstructured-inference
 pdf2image
 pillow
 chromadb
-openai
+requests>=2.28.0
 python-dotenv
 slowapi
 redis

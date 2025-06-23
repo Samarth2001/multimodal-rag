@@ -7,7 +7,7 @@ A powerful, production-ready document analysis system that combines **Retrieval 
 ### 🔥 **Enhanced RAG Pipeline**
 - **Advanced PDF Processing**: Better text extraction with element-type handling (text, tables, images)
 - **Intelligent Chunking**: Optimized text segmentation with overlap for better context preservation
-- **Semantic Search**: ChromaDB vector store with OpenAI embeddings for precise document retrieval
+- **Semantic Search**: ChromaDB vector store with Google AI embeddings for precise document retrieval
 - **Context-Aware Responses**: Improved prompt engineering with source citations
 
 ### 🚀 **Production-Ready Backend**
@@ -42,7 +42,7 @@ Frontend (Next.js)     Backend (FastAPI)     Vector Store (ChromaDB)
       │                        │                        │
       ├─ Upload Interface      ├─ PDF Processing        ├─ Document Embeddings
       ├─ Chat Interface        ├─ Text Chunking         ├─ Similarity Search
-      ├─ Session Management    ├─ OpenAI Integration    ├─ Metadata Storage
+      ├─ Session Management    ├─ OpenRouter Integration├─ Metadata Storage
       └─ Progress Tracking     └─ Response Generation   └─ Session Isolation
 ```
 
@@ -51,7 +51,8 @@ Frontend (Next.js)     Backend (FastAPI)     Vector Store (ChromaDB)
 ### Prerequisites
 - **Node.js** 18+ and npm
 - **Python** 3.11+
-- **OpenAI API Key** ([Get one here](https://platform.openai.com/api-keys))
+- **OpenRouter API Key** ([Get one here](https://openrouter.ai/keys))
+- **Google AI API Key** for embeddings ([Get one here](https://makersuite.google.com/app/apikey))
 
 ### 1. Clone the Repository
 ```bash
@@ -72,7 +73,7 @@ pip install -r Requirements.txt
 
 # Configure environment
 cp env.example .env
-# Edit .env with your OpenAI API key
+# Edit .env with your OpenRouter and Google AI API keys
 
 # Run the backend
 python main.py
@@ -100,7 +101,7 @@ npm run dev
 ```bash
 # Create environment file
 cp backend/env.example .env
-# Add your OpenAI API key to .env
+# Add your OpenRouter and Google AI API keys to .env
 
 # Start all services
 docker-compose up -d
@@ -140,11 +141,18 @@ docker build -t multimodal-rag-frontend .
 
 #### Backend (`backend/.env`)
 ```env
-# OpenAI Configuration
-OPENAI_API_KEY=your_api_key_here
-OPENAI_API_BASE=https://api.openai.com/v1
-OPENAI_EMBEDDING_MODEL=text-embedding-ada-002
-OPENAI_CHAT_MODEL=gpt-3.5-turbo
+# OpenRouter Configuration
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+OPENROUTER_API_BASE=https://openrouter.ai/api/v1/
+SITE_URL=http://localhost:3000
+SITE_NAME=Multimodal RAG Assistant
+
+# Model Configuration (OpenRouter format)
+CHAT_MODEL=google/gemini-2.5-flash-lite-preview-06-17
+
+# Google AI for Embeddings
+GOOGLE_API_KEY=your_google_api_key_here
+EMBEDDING_MODEL=models/text-embedding-004
 
 # File Processing
 PDF_UPLOAD_DIR=./uploads
@@ -261,17 +269,22 @@ npm test
 
 ### Common Issues
 
-1. **OpenAI API Errors**
-   - Verify API key is set correctly
-   - Check API quota and billing
+1. **OpenRouter API Errors**
+   - Verify OpenRouter API key is set correctly
+   - Check OpenRouter credits and billing
    - Ensure API base URL is correct
 
-2. **File Upload Failures**
+2. **Google AI Embedding Errors**
+   - Verify Google AI API key is set correctly
+   - Check Google AI API quota
+   - Ensure embedding model is available
+
+3. **File Upload Failures**
    - Check file size (max 50MB)
    - Ensure PDF format
    - Verify sufficient disk space
 
-3. **ChromaDB Issues**
+4. **ChromaDB Issues**
    - Clear `chroma/` directory to reset
    - Check file permissions
    - Verify sufficient memory
@@ -317,7 +330,8 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🙏 Acknowledgments
 
-- **OpenAI** for GPT and embedding models
+- **OpenRouter** for unified LLM API access
+- **Google AI** for Gemini models and embeddings
 - **ChromaDB** for vector database capabilities
 - **FastAPI** for the robust backend framework
 - **Next.js** for the modern frontend framework

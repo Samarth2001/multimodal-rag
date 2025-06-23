@@ -1,19 +1,18 @@
 "use client";
 import React, { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
-import { useChat } from "../context/ChatContext";
+import useChatStore from "@/store/chatStore";
 import { uploadDocument } from "@/utils/api";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, CheckCircle, AlertCircle, X, Loader2 } from "lucide-react";
+import { Upload, CheckCircle, Loader2, FileIcon } from "lucide-react";
 
 interface FileUploadProps {
   onDocumentNameSet: (name: string) => void;
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({ onDocumentNameSet }) => {
-  const { setSessionId, sessionId } = useChat();
+  const { setSessionId, sessionId, clearCurrentSession } = useChatStore();
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -22,6 +21,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDocumentNameSet }) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
+    if (sessionId) {
+      // If a session already exists, we should clear it before uploading a new one.
+      // This logic could also be handled by a confirmation dialog in a real app.
+      clearCurrentSession();
+    }
+    
     // Validations
     if (!file.name.toLowerCase().endsWith('.pdf')) {
       return toast({ variant: "destructive", title: "Invalid File Type", description: "Only PDF files are supported." });
@@ -35,7 +40,6 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDocumentNameSet }) => {
     setProgress(0);
 
     try {
-      // Simulate progress for better UX
       const progressInterval = setInterval(() => {
         setProgress(prev => (prev >= 90 ? prev : prev + 10));
       }, 500);
@@ -57,53 +61,84 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDocumentNameSet }) => {
       const errorMessage = error instanceof Error ? error.message : "Upload failed";
       toast({ variant: "destructive", title: "Upload Failed", description: errorMessage });
     } finally {
-      // Short delay before resetting UI to show completion
       setTimeout(() => {
         setIsUploading(false);
         setProgress(0);
       }, 1000);
     }
-  }, [setSessionId, onDocumentNameSet, toast]);
+  }, [setSessionId, onDocumentNameSet, toast, sessionId, clearCurrentSession]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { 'application/pdf': ['.pdf'] },
     multiple: false,
-    disabled: isUploading || !!sessionId, // Disable if uploading or a session is active
+    disabled: isUploading,
   });
+
+  const hasActiveSession = !!sessionId && !isUploading;
 
   return (
     <div
       {...getRootProps()}
       className={`
-        border-2 border-dashed rounded-lg p-6 text-center 
-        transition-all duration-200 
-        ${isDragActive ? 'border-sky-500 bg-sky-900/20' : 'border-neutral-700 hover:border-sky-600 hover:bg-neutral-800/40'}
-        ${isUploading ? 'cursor-wait' : 'cursor-pointer'}
-        ${!!sessionId && !isUploading ? 'border-green-700/60 bg-green-900/20 cursor-not-allowed' : ''}
+        relative border-2 border-dashed rounded-lg p-3 text-center 
+        transition-all duration-200 ease-in-out cursor-pointer text-sm
+        ${isDragActive 
+          ? 'border-zinc-500/60 bg-zinc-800/20' 
+          : hasActiveSession
+            ? 'border-emerald-500/60 bg-emerald-900/10 cursor-not-allowed'
+            : 'border-zinc-700/50 hover:border-zinc-600/60 hover:bg-zinc-800/20'
+        }
+        ${isUploading ? 'cursor-wait' : ''}
       `}
     >
-      <input {...getInputProps()} />
+      <input {...getInputProps()} disabled={isUploading || hasActiveSession} />
       
       {isUploading ? (
         <div className="flex flex-col items-center justify-center space-y-2">
-          <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-          <p className="text-sm font-medium text-sky-300">Processing Document...</p>
-          <Progress value={progress} className="w-full h-1.5 mt-2 bg-neutral-700" />
+          <div className="w-8 h-8 rounded-lg bg-zinc-700/20 flex items-center justify-center">
+            <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+          </div>
+          <div className="space-y-2 w-full">
+            <p className="text-xs font-medium text-zinc-300">Processing...</p>
+            <Progress 
+              value={progress} 
+              className="w-full h-1.5 bg-zinc-800 rounded-full" 
+            />
+            <p className="text-xs text-zinc-500">{progress}%</p>
+          </div>
         </div>
-      ) : !!sessionId ? (
-         <div className="flex flex-col items-center justify-center space-y-2 text-green-400">
-          <CheckCircle className="w-8 h-8" />
-          <p className="text-sm font-medium">Document Ready</p>
-          <p className="text-xs text-green-500">Clear chat to upload a new file</p>
+      ) : hasActiveSession ? (
+        <div className="flex flex-col items-center justify-center space-y-2">
+          <div className="w-8 h-8 rounded-lg bg-emerald-600/20 flex items-center justify-center">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-emerald-400">Document Ready</p>
+            <p className="text-xs text-zinc-500">Clear chat to upload new file</p>
+          </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center space-y-2 text-neutral-400">
-          <Upload className="w-8 h-8" />
-          <p className="text-sm font-medium">
-            {isDragActive ? "Drop the PDF here" : "Upload Document"}
-          </p>
-          <p className="text-xs text-neutral-500">Drop a PDF or click to browse</p>
+        <div className="flex flex-col items-center justify-center space-y-2">
+          <div className={`w-8 h-8 rounded-lg bg-zinc-800/50 flex items-center justify-center transition-colors ${
+            isDragActive ? 'bg-zinc-700/20' : ''
+          }`}>
+            {isDragActive ? (
+              <FileIcon className="w-4 h-4 text-zinc-400" />
+            ) : (
+              <Upload className="w-4 h-4 text-zinc-400" />
+            )}
+          </div>
+          <div className="space-y-1">
+            <p className={`text-xs font-medium transition-colors ${
+              isDragActive ? 'text-zinc-300' : 'text-zinc-300'
+            }`}>
+              {isDragActive ? "Drop PDF here" : "Upload PDF"}
+            </p>
+            <p className="text-xs text-zinc-500">
+              Drag & drop or click to browse
+            </p>
+          </div>
         </div>
       )}
     </div>

@@ -56,26 +56,91 @@ class PDFProcessor:
             return []
 
     def _chunk_text(self, text: str) -> List[str]:
-        """Split text into smaller chunks if needed"""
+        """Split text into smaller chunks with better semantic preservation"""
         if len(text) <= Config.CHUNK_SIZE:
             return [text]
         
         chunks = []
-        words = text.split()
+        
+        # First, try to split by paragraphs
+        paragraphs = text.split('\n\n')
         current_chunk = []
         current_length = 0
         
-        for word in words:
-            if current_length + len(word) + 1 > Config.CHUNK_SIZE and current_chunk:
-                chunks.append(' '.join(current_chunk))
-                current_chunk = [word]
-                current_length = len(word)
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+                
+            # If adding this paragraph would exceed chunk size
+            if current_length + len(paragraph) + 2 > Config.CHUNK_SIZE and current_chunk:
+                # Add overlap from previous chunk if possible
+                chunk_text = '\n\n'.join(current_chunk)
+                if len(chunk_text) > Config.MIN_CHUNK_LENGTH:  # Only add if substantial
+                    chunks.append(chunk_text)
+                
+                # Start new chunk, potentially with overlap
+                if Config.CHUNK_OVERLAP > 0 and current_chunk:
+                    # Take last part of previous chunk for overlap
+                    last_para = current_chunk[-1]
+                    overlap_words = last_para.split()[-Config.CHUNK_OVERLAP//10:]  # Rough word estimate
+                    overlap_text = ' '.join(overlap_words)
+                    current_chunk = [overlap_text, paragraph] if len(overlap_text) > 20 else [paragraph]
+                    current_length = len(overlap_text) + len(paragraph) + 2
+                else:
+                    current_chunk = [paragraph]
+                    current_length = len(paragraph)
             else:
-                current_chunk.append(word)
-                current_length += len(word) + 1
+                # If paragraph itself is too long, split by sentences
+                if len(paragraph) > Config.CHUNK_SIZE:
+                    sentence_chunks = self._split_by_sentences(paragraph)
+                    for sentence_chunk in sentence_chunks:
+                        if current_length + len(sentence_chunk) + 2 > Config.CHUNK_SIZE and current_chunk:
+                            chunk_text = '\n\n'.join(current_chunk)
+                            if len(chunk_text) > Config.MIN_CHUNK_LENGTH:
+                                chunks.append(chunk_text)
+                            current_chunk = [sentence_chunk]
+                            current_length = len(sentence_chunk)
+                        else:
+                            current_chunk.append(sentence_chunk)
+                            current_length += len(sentence_chunk) + 2
+                else:
+                    current_chunk.append(paragraph)
+                    current_length += len(paragraph) + 2
+        
+        # Add remaining chunk
+        if current_chunk:
+            chunk_text = '\n\n'.join(current_chunk)
+            if len(chunk_text) > Config.MIN_CHUNK_LENGTH:
+                chunks.append(chunk_text)
+            
+        return chunks if chunks else [text]  # Fallback to original text
+    
+    def _split_by_sentences(self, text: str) -> List[str]:
+        """Split text by sentences, trying to preserve meaning"""
+        import re
+        
+        # Simple sentence splitting - can be enhanced with NLTK if needed
+        sentences = re.split(r'[.!?]+\s+', text)
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            if current_length + len(sentence) + 1 > Config.CHUNK_SIZE and current_chunk:
+                chunks.append('. '.join(current_chunk) + '.')
+                current_chunk = [sentence]
+                current_length = len(sentence)
+            else:
+                current_chunk.append(sentence)
+                current_length += len(sentence) + 1
         
         if current_chunk:
-            chunks.append(' '.join(current_chunk))
+            chunks.append('. '.join(current_chunk) + '.')
             
         return chunks
 
